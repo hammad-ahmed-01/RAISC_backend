@@ -103,12 +103,12 @@ python manage.py createsuperuser
 ```
 Follow the prompts to set a username, email, and password.
 
-### **Run the Development Server**
+## **Run the Development Server**
 ```bash
 python manage.py runserver
 ```
 
-### **Project Structure**
+## **Project Structure**
 **RAISC_backend/:** Main project directory containing settings and URLs.<br>
 **users/:** Handles user authentication and profiles.<br>
 **chat/:** Manages real-time chat functionality with threaded conversations.<br>
