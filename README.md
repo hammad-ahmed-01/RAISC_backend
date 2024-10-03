@@ -74,7 +74,7 @@ DEBUG=True  # Set to False in production
 ALLOWED_HOSTS=localhost,127.0.0.1
 
 # Database settings
-POSTGRES_DB=mental_health_db
+POSTGRES_DB=RAISC_backend
 POSTGRES_USER=your_postgres_username
 POSTGRES_PASSWORD=your_postgres_password
 POSTGRES_HOST=localhost
