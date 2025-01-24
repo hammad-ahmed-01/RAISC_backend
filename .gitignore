@@ -217,6 +217,3 @@ secrets.json
 
 # Ignore Thumbs.db (Windows)
 Thumbs.db
-
-# Ignore structure file
-structure.txt

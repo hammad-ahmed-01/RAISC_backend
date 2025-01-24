@@ -75,9 +75,9 @@ ASGI_APPLICATION = 'RAISC_backend.asgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('POSTGRES_DB', default='mental_health_db'),
+        'NAME': config('POSTGRES_DB', default='RAISC_DB'),
         'USER': config('POSTGRES_USER', default='postgres'),
-        'PASSWORD': config('POSTGRES_PASSWORD', default=''),
+        'PASSWORD': config('POSTGRES_PASSWORD', default='local1234'),
         'HOST': config('POSTGRES_HOST', default='localhost'),
         'PORT': config('POSTGRES_PORT', default='5432'),
     }
