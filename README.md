@@ -1,3 +1,4 @@
+# OLD - NOT UPDATED
 # FYP - RAISC - Backend
 
 This is the backend for our FYP application built using Django and Django Channels. It provides APIs and WebSocket support for functionalities such as user authentication, real-time chat, resource management, and appointment scheduling.
