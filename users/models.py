@@ -27,6 +27,7 @@ class Calendar(models.Model):
         related_name='doctor_calendars',
         limit_choices_to={'user_type': 'doctor'}
     )
+    date = models.DateField(null=True)  # Added Date Field
     details = models.JSONField(default=dict)
     description = models.CharField(max_length=255, blank=True, null=True)
     patient_update = models.JSONField(default=dict, blank=True, null=True)
