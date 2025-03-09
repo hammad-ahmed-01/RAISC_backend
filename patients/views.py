@@ -99,3 +99,13 @@ class UserProfileView(APIView):
             print(f"Error updating profile data: {e}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+
+class PatientSessionsView(generics.ListAPIView):
+    serializer_class = CalendarPatientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Fetch therapy sessions for the logged-in patient.
+        """
+        return Calendar.objects.filter(patient=self.request.user).order_by("date")
