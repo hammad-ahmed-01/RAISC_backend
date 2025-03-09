@@ -1,3 +1,4 @@
+# daphne -b 0.0.0.0 -p 8000 RAISC_backend.asgi:application
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
 import os
