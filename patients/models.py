@@ -20,3 +20,19 @@ class PatientProfile(models.Model):
 
     def __str__(self):
         return self.user.username
+
+class ChatbotProfile(models.Model):
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='chatbot_profiles',
+        limit_choices_to={'user_type': 'patient'}
+    )
+    collected_data = models.TextField()  # Stores extracted chatbot insights
+    session_summary = models.TextField()  # AI-generated summary
+    important_messages = models.TextField(null=True, blank=True)  # Highlighted messages
+    date = models.DateField(auto_now_add=True)  # Timestamp of the entry
+
+    def __str__(self):
+        return f"Chatbot Profile - {self.patient.username} ({self.date})"
+
