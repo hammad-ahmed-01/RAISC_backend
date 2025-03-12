@@ -31,8 +31,9 @@ class ChatbotProfile(models.Model):
     collected_data = models.TextField()  # Stores extracted chatbot insights
     session_summary = models.TextField()  # AI-generated summary
     important_messages = models.TextField(null=True, blank=True)  # Highlighted messages
-    date = models.DateField(auto_now_add=True)  # Timestamp of the entry
+    date = models.DateTimeField(auto_now_add=True)  # Change to DateTimeField for accurate timestamp
 
     def __str__(self):
-        return f"Chatbot Profile - {self.patient.username} ({self.date})"
+        return f"Chatbot Profile - {self.patient.username} ({self.date.strftime('%Y-%m-%d %H:%M:%S')})"
+
 

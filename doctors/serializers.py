@@ -59,7 +59,7 @@ class CalendarDoctorSerializer(serializers.ModelSerializer):
     patient = serializers.SerializerMethodField()
     class Meta:
         model = Calendar
-        fields = ['id', 'title', 'details', 'date', 'description', 'patient_update', 'patient']
+        fields = ['id', 'title', 'details', 'date', 'description', 'patient_update', 'doctor_summary', 'patient']
 
     def get_patient(self, obj):
         if obj.patient:

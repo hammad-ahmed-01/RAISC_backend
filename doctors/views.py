@@ -12,6 +12,8 @@ from rest_framework import status
 from .serializers import DoctorViewPatientSerializer, ChatbotProfileSerializer
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
+from rest_framework.authentication import TokenAuthentication
 
 class DoctorLandingPageView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsDoctorUser]
@@ -148,3 +150,38 @@ class ImportantMessagesView(APIView):
         serializer = ChatbotProfileSerializer(chatbot_entries, many=True)
         return Response(serializer.data)
 
+class UpdateDoctorSummaryView(APIView):
+    """
+    Allows doctors to update the `doctor_summary` field for a session.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, session_id):
+        """
+        Update the `doctor_summary` field for a specific session.
+        """
+        # Get the session object
+        session = get_object_or_404(Calendar, id=session_id)
+
+        # Ensure that the requesting user is the assigned doctor for this session
+        if session.doctor != request.user:
+            return Response(
+                {"error": "You are not authorized to update this session."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get doctor summary from request
+        doctor_summary = request.data.get("doctor_summary", "").strip()
+
+        if not doctor_summary:
+            return Response(
+                {"error": "Doctor summary cannot be empty."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update and save the session summary
+        session.doctor_summary = doctor_summary
+        session.save()
+
+        return Response({"message": "Doctor summary updated successfully."}, status=status.HTTP_200_OK)

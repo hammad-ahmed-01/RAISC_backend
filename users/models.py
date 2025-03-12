@@ -30,6 +30,7 @@ class Calendar(models.Model):
     date = models.DateField(null=True)  # Added Date Field
     details = models.JSONField(default=dict)
     description = models.CharField(max_length=255, blank=True, null=True)
+    doctor_summary = models.CharField(max_length=255, blank=True, null=True)
     patient_update = models.JSONField(default=dict, blank=True, null=True)
 
     def __str__(self):
