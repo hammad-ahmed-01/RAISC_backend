@@ -1,0 +1,1 @@
+web: gunicorn RAISC_backend.wsgi
