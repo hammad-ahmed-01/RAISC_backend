@@ -59,6 +59,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Add your Next.js frontend URL
+    "https://raisc-frontend.vercel.app",
 ]
 
 ROOT_URLCONF = 'RAISC_backend.urls'
