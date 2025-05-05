@@ -30,6 +30,8 @@ class ChatbotProfile(models.Model):
     )
     collected_data = models.TextField()  # Stores extracted chatbot insights
     session_summary = models.TextField()  # AI-generated summary
+    session_start_msg = models.IntegerField(default=0)
+    session_end_msg = models.IntegerField(default=0)
     important_messages = models.TextField(null=True, blank=True)  # Highlighted messages
     date = models.DateTimeField(auto_now_add=True)  # Change to DateTimeField for accurate timestamp
 

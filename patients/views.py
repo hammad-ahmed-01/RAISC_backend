@@ -128,7 +128,9 @@ class UserProfileView(APIView):
                             date=summary_timestamp,
                             defaults={
                                 "collected_data": latest_summary["emotional_summary"],
-                                "session_summary": latest_summary["summary"]
+                                "session_summary": latest_summary["summary"],
+                                "session_start_msg": latest_summary["session_start_msg"],
+                                "session_end_msg": latest_summary["session_end_msg"],
                             }
                         )
                         if created:

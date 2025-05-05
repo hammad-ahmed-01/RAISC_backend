@@ -23,7 +23,7 @@ SECRET_KEY = config('SECRET_KEY', default='your-secret-key')
 DEBUG = True  # Set to False in production
 APPEND_SLASH = False
 
-ALLOWED_HOSTS = ['*']  # for dev/testing only
+ALLOWED_HOSTS = ['your-railway-app.up.railway.app', 'localhost']
 
 # Application definition
 INSTALLED_APPS = [

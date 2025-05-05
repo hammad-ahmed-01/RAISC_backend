@@ -85,4 +85,4 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatbotProfile
-        fields = ["id", "patient", "patient_name", "collected_data", "session_summary", "important_messages", "date"]
+        fields = ["id", "patient", "patient_name", "collected_data", "session_summary", "important_messages", "date", "session_start_msg", "session_end_msg"]
