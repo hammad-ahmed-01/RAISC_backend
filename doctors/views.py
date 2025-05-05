@@ -37,6 +37,31 @@ class DoctorSessionsView(generics.ListAPIView):
     def get_queryset(self):
         return Calendar.objects.filter(doctor=self.request.user)
 
+class CreateDoctorSessionView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        patient_id = data.get("patient_id")
+        title = data.get("title", "").strip()
+        description = data.get("description", "").strip()
+        date = data.get("date")
+
+        if not (patient_id and title and date):
+            return Response({"error": "Missing required fields."}, status=400)
+
+        patient = get_object_or_404(User, id=patient_id)
+
+        session = Calendar.objects.create(
+            doctor=request.user,
+            patient=patient,
+            title=title,
+            description=description,
+            date=date
+        )
+
+        return Response({"message": "Session created successfully.", "session_id": session.id}, status=201)
 
 class ListDoctorsView(generics.ListAPIView):
     queryset = Doctor.objects.select_related("user")  # Fetch related user data
