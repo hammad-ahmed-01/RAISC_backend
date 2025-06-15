@@ -4,6 +4,7 @@ from decouple import config
 from dotenv import load_dotenv
 import dj_database_url
 
+# Load environment variables from .env file
 load_dotenv()
 
 DATABASES = {
