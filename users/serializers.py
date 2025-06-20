@@ -11,7 +11,7 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 class DoctorProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
-        fields = ['professional_information', 'chatgroup_nickname', 'rates']
+        fields = ['professional_information', 'chatgroup_nickname', 'rates', 'organization']
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)

@@ -1,6 +1,6 @@
 from django.db import models
 from django.conf import settings
-
+from organization.models import Organization
 class Doctor(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -13,7 +13,7 @@ class Doctor(models.Model):
 
     def __str__(self):
         return self.user.username
-
+    organization=models.ForeignKey(Organization,null=True, on_delete=models.SET_NULL)
 
 class DoctorRequest(models.Model):
     patient = models.ForeignKey(

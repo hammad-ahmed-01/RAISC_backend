@@ -7,6 +7,7 @@ class User(AbstractUser):
         ('staff', 'Staff'),
         ('patient', 'Patient'),
         ('doctor', 'Doctor'),
+        ('organization', 'Organization')
     )
     user_type = models.CharField(max_length=10, choices=USER_TYPES)
 
