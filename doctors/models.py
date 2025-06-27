@@ -13,7 +13,7 @@ class Doctor(models.Model):
 
     def __str__(self):
         return self.user.username
-    organization=models.ForeignKey(Organization,null=True, on_delete=models.SET_NULL)
+    organization=models.ForeignKey(settings.AUTH_USER_MODEL,null=True, on_delete=models.CASCADE,limit_choices_to={'user_type': 'organization'}, related_name='employed_doctors')
 
 class DoctorRequest(models.Model):
     patient = models.ForeignKey(

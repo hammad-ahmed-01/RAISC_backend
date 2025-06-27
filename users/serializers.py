@@ -1,7 +1,13 @@
 from rest_framework import serializers
+
+from organization.models import Organization
 from .models import User, Calendar
 from patients.models import PatientProfile
 from doctors.models import Doctor
+class OrganizationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=Organization
+        fields=['id','name','location','details','user_id']
 
 class PatientProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,6 +15,7 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         fields = ['level', 'associated_psychologist', 'profile_data']
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
+   
     class Meta:
         model = Doctor
         fields = ['professional_information', 'chatgroup_nickname', 'rates', 'organization']
@@ -18,10 +25,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     user_type = serializers.ChoiceField(choices=User.USER_TYPES)
     patient_profile = PatientProfileSerializer(required=False)
     doctor_profile = DoctorProfileSerializer(required=False)
-
+    organization_profile=OrganizationSerializer(required=False)
     class Meta:
         model = User
-        fields = ('username', 'password', 'email', 'user_type', 'patient_profile', 'doctor_profile')
+        fields = ('username', 'password', 'email', 'user_type', 'patient_profile', 'doctor_profile','organization_profile')
 
     def validate(self, data):
         user_type = data.get('user_type')
@@ -29,6 +36,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"patient_profile": "Patient profile data is required for patients."})
         if user_type == 'doctor' and 'doctor_profile' not in data:
             raise serializers.ValidationError({"doctor_profile": "Doctor profile data is required for doctors."})
+        if user_type=='organization' and 'organization_profile' not in data:
+            raise serializers.ValidationError({'organization_profile': 'Organization profile is required for organization'})
         return data
 
     def create(self, validated_data):
@@ -36,7 +45,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         patient_profile_data = validated_data.pop('patient_profile', None)
         doctor_profile_data = validated_data.pop('doctor_profile', None)
-
+        organization_profile_data= validated_data.pop('organization_profile', None)
         user = User(**validated_data)
         user.set_password(password)
         user.save()
@@ -45,6 +54,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             PatientProfile.objects.create(user=user, **patient_profile_data)
         elif user_type == 'doctor' and doctor_profile_data:
             Doctor.objects.create(user=user, **doctor_profile_data)
+        elif user_type=='organization' and organization_profile_data:
+            Organization.objects.create(user=user, **organization_profile_data)
         return user
 
 class UserSerializer(serializers.ModelSerializer):
