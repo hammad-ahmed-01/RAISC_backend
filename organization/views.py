@@ -27,28 +27,31 @@ class OrganizationList(APIView):
 
 class OrganizationDetails(APIView):
     permission_classes=[permissions.IsAuthenticated, IsOrganizationUser]
-    def get(self, request, pk):
-        organization=get_object_or_404(Organization,id=pk)
+    def get(self, request):
+        user = request.user
+        organization=get_object_or_404(Organization,user_id=user.id)
         serializer=OrganizationSerializer(organization)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-    def put(self, request, pk):
-        
-        organization=get_object_or_404(Organization,id=pk)
+    def put(self, request):
+        user = request.user
+        organization=get_object_or_404(Organization,user_id=user.id)
         serializer=OrganizationSerializer(organization, data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-    def delete(self, request, pk):
-        organization=get_object_or_404(Organization,id=pk)
+    def delete(self, request):
+        user=request.user
+        organization=get_object_or_404(Organization,user_id=user.id)
         organization.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     
 
 class OrganizationViewDoctors(APIView):
     permission_classes=[permissions.IsAuthenticated, IsOrganizationUser]
-    def get(self, request, id):
-        doctor_list=Doctor.objects.filter(organization_id=id)
+    def get(self, request):
+        
+        doctor_list=Doctor.objects.filter(organization_id=request.user.id)
         print(list(doctor_list))
         serializer=OrganizationViewDoctorsSerializer(doctor_list, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -56,8 +59,8 @@ class OrganizationViewDoctors(APIView):
         
 class OrganizationNoOfDoctors(APIView):
     permission_classes=[permissions.IsAuthenticated, IsOrganizationUser]
-    def get(self,request,pk):
-        queryset=Organization.objects.filter(user_id=pk)
+    def get(self,request):
+        queryset=Organization.objects.filter(user_id=request.user.id)
         serializer=OrganizationNoOfDoctorsSerielizer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
