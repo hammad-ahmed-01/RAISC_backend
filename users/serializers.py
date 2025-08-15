@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import User, Calendar
 from patients.models import PatientProfile
 from doctors.models import Doctor
+# Slug for Simple user
+from django.utils.text import slugify
 
 class PatientProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -117,3 +119,41 @@ class CalendarStaffSerializer(serializers.ModelSerializer):
             except Doctor.DoesNotExist:
                 return None
         return None
+
+# Serializer for Simple user (new-registration)
+class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ('full_name', 'email', 'password')
+
+    def validate_email(self, value):
+        value = value.lower().strip()
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email is already in use.")
+        return value
+
+    def create(self, validated_data):
+        full_name = validated_data.pop('full_name').strip()
+        email = validated_data.pop('email').strip().lower()
+        password = validated_data.pop('password')
+
+        # Split name
+        parts = full_name.split()
+        first_name = parts[0]
+        last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+        # Generate a safe username
+        base_username = slugify(full_name.replace(" ", ""))[:30]
+        username = base_username
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username[:30-len(str(counter))]}{counter}"
+            counter += 1
+
+        user = User(username=username, email=email, first_name=first_name, last_name=last_name)
+        user.set_password(password)
+        user.save()
+        return user

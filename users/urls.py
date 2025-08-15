@@ -1,5 +1,5 @@
 from django.urls import path, include
-from .views import UserRegistrationView, LoginView, UserDetailView, StaffLandingPageView, CalendarListView
+from .views import SimpleUserRegistrationView, UserRegistrationView, LoginView, UserDetailView, StaffLandingPageView, CalendarListView
 
 # Define staff-specific URL patterns
 staff_patterns = [
@@ -8,6 +8,7 @@ staff_patterns = [
 ]
 
 urlpatterns = [
+    path("new-register/" , SimpleUserRegistrationView.as_view(), name="new-register"),
     path('register/', UserRegistrationView.as_view(), name='register'),
     path('login/', LoginView.as_view(), name='login'),
     path('user/', UserDetailView.as_view(), name='user-detail'),
