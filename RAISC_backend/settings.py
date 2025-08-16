@@ -4,14 +4,13 @@ from decouple import config
 from dotenv import load_dotenv
 import dj_database_url
 
-# Load environment variables from .env file
 load_dotenv()
 
 DATABASES = {
     'default': dj_database_url.parse(
         os.getenv("DATABASE_URL"),
         conn_max_age=600,
-        ssl_require=False
+        ssl_require=True
     )
 }
 
@@ -24,8 +23,7 @@ SECRET_KEY = config('SECRET_KEY', default='your-secret-key')
 DEBUG = True  # Set to False in production
 APPEND_SLASH = False
 
-# ALLOWED_HOSTS = ['web-production-deb22.up.railway.app', 'localhost']
-ALLOWED_HOSTS = ['*']  # for dev/testing only
+ALLOWED_HOSTS = ['web-production-deb22.up.railway.app', 'localhost']
 
 # Application definition
 INSTALLED_APPS = [
@@ -60,7 +58,7 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000", 
+    "https://raisc.org",
 ]
 
 ROOT_URLCONF = 'RAISC_backend.urls'
