@@ -1,41 +1,73 @@
+from django.shortcuts import get_object_or_404
+
+from rest_framework import permissions, generics, status
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import permissions, generics
-from users.permissions import IsDoctorUser, IsAuthenticated
-from users.serializers import UserSerializer
-from .serializers import DoctorProfileSerializer, CalendarDoctorSerializer, DoctorRequestSerializer, DoctorRequestPostSerializer
-from users.models import User
-from users.models import Calendar
-from .models import Doctor, DoctorRequest
-from patients.models import PatientProfile, ChatbotProfile
-from rest_framework import status
-from .serializers import DoctorViewPatientSerializer, ChatbotProfileSerializer
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from django.shortcuts import get_object_or_404
-from rest_framework.authentication import TokenAuthentication
+
+from users.models import User, Calendar
+from patients.models import PatientProfile, ChatbotProfile
+from .models import Doctor, DoctorRequest
+
+from .serializers import (
+    DoctorProfileSerializer,
+    CalendarDoctorSerializer,
+    DoctorRequestSerializer,
+    DoctorRequestPostSerializer,
+    DoctorViewPatientSerializer,
+    ChatbotProfileSerializer,
+)
+
+# If you have custom permissions in users.permissions, you can import them.
+# We'll use DRF's IsAuthenticated by default to avoid name collisions.
+# from users.permissions import IsDoctorUser, IsAuthenticated  # optional custom classes
+
+
+# -------------------------
+# Doctor dashboard landing
+# -------------------------
 
 class DoctorLandingPageView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsDoctorUser]
+    permission_classes = [permissions.IsAuthenticated]  # add IsDoctorUser if you have it
 
     def get(self, request):
-        user = request.user
-        doctor_profile = user.doctor_profile  # Access the related doctor profile
+        # Assuming Doctor model has OneToOne related_name="doctor_profile"
+        doctor_profile = getattr(request.user, "doctor_profile", None)
+        if not doctor_profile:
+            return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
         profile_data = DoctorProfileSerializer(doctor_profile).data
-        user_data = UserSerializer(user).data
-        data = {
-            'user': user_data,
-            'doctor_profile': profile_data,
-            'message': 'Welcome to your doctor dashboard.'
+
+        # Keep user payload minimal to avoid heavy nesting:
+        user_data = {
+            "id": request.user.id,
+            "username": request.user.username,
+            "email": request.user.email,
+            "user_type": getattr(request.user, "user_type", ""),
         }
-        return Response(data)
-    
+
+        return Response(
+            {
+                "user": user_data,
+                "doctor_profile": profile_data,
+                "message": "Welcome to your doctor dashboard.",
+            }
+        )
+
+
+# -------------------------
+# Doctor's calendar entries
+# -------------------------
+
 class DoctorSessionsView(generics.ListAPIView):
     serializer_class = CalendarDoctorSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Calendar.objects.filter(doctor=self.request.user)
+        return Calendar.objects.filter(doctor=self.request.user).order_by("-date")
+
 
 class CreateDoctorSessionView(APIView):
     authentication_classes = [TokenAuthentication]
@@ -44,110 +76,146 @@ class CreateDoctorSessionView(APIView):
     def post(self, request):
         data = request.data
         patient_id = data.get("patient_id")
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
+        title = (data.get("title") or "").strip()
+        description = (data.get("description") or "").strip()
         date = data.get("date")
 
         if not (patient_id and title and date):
-            return Response({"error": "Missing required fields."}, status=400)
+            return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
 
         patient = get_object_or_404(User, id=patient_id)
-
         session = Calendar.objects.create(
             doctor=request.user,
             patient=patient,
             title=title,
             description=description,
-            date=date
+            date=date,
         )
+        return Response({"message": "Session created successfully.", "session_id": session.id}, status=status.HTTP_201_CREATED)
 
-        return Response({"message": "Session created successfully.", "session_id": session.id}, status=201)
+
+# -------------------------
+# Public doctor listing API
+# -------------------------
 
 class ListDoctorsView(generics.ListAPIView):
-    queryset = Doctor.objects.select_related("user")  # Fetch related user data
-    serializer_class = DoctorProfileSerializer
+    """
+    GET /users/doctor/list/   (Token required)
+    - Returns plain list (no pagination wrapper)
+    - Matches Next.js route normalization
+    """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    queryset = Doctor.objects.select_related("user").order_by("user__username")
+    serializer_class = DoctorProfileSerializer
+    pagination_class = None
+
+
+# -------------------------
+# Patient ↔ Doctor requests
+# -------------------------
 
 class RequestDoctorView(APIView):
+    """
+    POST /users/doctor/request/<doctor_id>/
+    NOTE: <doctor_id> here is the Doctor.pk (not User.pk)
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, doctor_id):
         patient = request.user
-        if patient.user_type != "patient":
-            return Response({"error": "Only patients can request a doctor."}, status=403)
+        if getattr(patient, "user_type", "") != "patient":
+            return Response({"error": "Only patients can request a doctor."}, status=status.HTTP_403_FORBIDDEN)
 
-        doctor = User.objects.filter(id=doctor_id, user_type="doctor").first()
-        if not doctor:
-            return Response({"error": "Doctor not found."}, status=404)
+        # doctor_id is Doctor.pk as used on the frontend
+        doc = get_object_or_404(Doctor, id=doctor_id)
+        doctor_user = doc.user
 
-        # Check if a request already exists
-        if DoctorRequest.objects.filter(patient=patient, doctor=doctor).exists():
-            return Response({"error": "You have already requested this doctor."}, status=400)
+        # prevent duplicates
+        if DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists():
+            return Response({"error": "You have already requested this doctor."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create the doctor request
-        doctor_request = DoctorRequest.objects.create(patient=patient, doctor=doctor)
-        return Response(DoctorRequestPostSerializer(doctor_request).data, status=201)
+        req = DoctorRequest.objects.create(patient=patient, doctor=doctor_user)
+        return Response(DoctorRequestPostSerializer(req).data, status=status.HTTP_201_CREATED)
+
 
 class CheckDoctorRequestView(APIView):
+    """
+    GET /users/doctor/request/<doctor_id>/status/
+    NOTE: <doctor_id> is Doctor.pk
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, doctor_id):
         patient = request.user
-        if patient.user_type != "patient":
-            return Response({"error": "Only patients can check requests."}, status=403)
+        if getattr(patient, "user_type", "") != "patient":
+            return Response({"error": "Only patients can check requests."}, status=status.HTTP_403_FORBIDDEN)
 
-        doctor = User.objects.filter(id=doctor_id, user_type="doctor").first()
-        if not doctor:
-            return Response({"error": "Doctor not found."}, status=404)
+        doc = get_object_or_404(Doctor, id=doctor_id)
+        doctor_user = doc.user
 
-        request_exists = DoctorRequest.objects.filter(patient=patient, doctor=doctor).exists()
-        return Response({"requested": request_exists})
+        exists = DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists()
+        return Response({"requested": exists})
 
-# Fetch pending requests for the doctor
+
 class ListDoctorRequestsView(generics.ListAPIView):
+    """
+    Doctor can see their pending requests
+    """
     serializer_class = DoctorRequestSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return DoctorRequest.objects.filter(doctor=self.request.user, status="pending")
+        return DoctorRequest.objects.filter(doctor=self.request.user, status="pending").order_by("-requested_at")
 
-# Manage request: Approve or Reject
+
 class ManageDoctorRequestView(generics.UpdateAPIView):
+    """
+    Doctor can approve/reject a specific request (PATCH with {"status": "approved"|"rejected"})
+    """
     serializer_class = DoctorRequestSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return DoctorRequest.objects.filter(doctor=self.request.user)
 
     def patch(self, request, *args, **kwargs):
         doctor_request = self.get_object()
-        new_status = request.data.get("status")
+        new_status = (request.data.get("status") or "").lower()
 
-        if new_status in ["approved", "rejected"]:
-            doctor_request.status = new_status
-            doctor_request.save()
+        if new_status not in {"approved", "rejected"}:
+            return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # If accepted, update PatientProfile to assign the doctor
-            if new_status == "approved":
-                try:
-                    patient_profile = PatientProfile.objects.get(user=doctor_request.patient)
-                    patient_profile.associated_psychologist = doctor_request.doctor  # Assign doctor
-                    patient_profile.level = max(2, patient_profile.level)  # Ensure level is at least 2
-                    patient_profile.save()
-                except PatientProfile.DoesNotExist:
-                    return Response({"error": "Patient profile not found"}, status=status.HTTP_404_NOT_FOUND)
+        doctor_request.status = new_status
+        doctor_request.save()
 
-            return Response({"message": f"Request {new_status} successfully"}, status=status.HTTP_200_OK)
+        if new_status == "approved":
+            try:
+                pp = PatientProfile.objects.get(user=doctor_request.patient)
+                pp.associated_psychologist = doctor_request.doctor
+                pp.level = max(2, pp.level or 0)
+                pp.save()
+            except PatientProfile.DoesNotExist:
+                return Response({"error": "Patient profile not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": f"Request {new_status} successfully"}, status=status.HTTP_200_OK)
+
+
+# -------------------------
+# Doctor's patients list
+# -------------------------
 
 class DoctorPatientsView(generics.ListAPIView):
     serializer_class = DoctorViewPatientSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return PatientProfile.objects.filter(associated_psychologist=self.request.user)
+        return PatientProfile.objects.filter(associated_psychologist=self.request.user).select_related("user").order_by("user__username")
 
+
+# -------------------------
+# Chatbot session listings
+# -------------------------
 
 class ChatbotProfileListView(generics.ListAPIView):
     serializer_class = ChatbotProfileSerializer
@@ -157,23 +225,25 @@ class ChatbotProfileListView(generics.ListAPIView):
     ordering_fields = ["date"]
 
     def get_queryset(self):
-        """
-        Fetch chatbot profiles for a specific patient.
-        """
         patient_id = self.kwargs.get("patient_id")
         return ChatbotProfile.objects.filter(patient_id=patient_id).order_by("-date")
 
 
 class ImportantMessagesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, patient_id):
-        """
-        Fetch chatbot entries where important_messages are present.
-        """
-        chatbot_entries = ChatbotProfile.objects.filter(patient_id=patient_id, important_messages__isnull=False)
-        serializer = ChatbotProfileSerializer(chatbot_entries, many=True)
+        entries = ChatbotProfile.objects.filter(
+            patient_id=patient_id,
+            important_messages__isnull=False
+        ).order_by("-date")
+        serializer = ChatbotProfileSerializer(entries, many=True)
         return Response(serializer.data)
+
+
+# -------------------------
+# Update doctor summary
+# -------------------------
 
 class UpdateDoctorSummaryView(APIView):
     """
@@ -183,30 +253,21 @@ class UpdateDoctorSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, session_id):
-        """
-        Update the `doctor_summary` field for a specific session.
-        """
-        # Get the session object
         session = get_object_or_404(Calendar, id=session_id)
 
-        # Ensure that the requesting user is the assigned doctor for this session
         if session.doctor != request.user:
             return Response(
                 {"error": "You are not authorized to update this session."},
-                status=status.HTTP_403_FORBIDDEN
+                status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Get doctor summary from request
-        doctor_summary = request.data.get("doctor_summary", "").strip()
-
+        doctor_summary = (request.data.get("doctor_summary") or "").strip()
         if not doctor_summary:
             return Response(
                 {"error": "Doctor summary cannot be empty."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Update and save the session summary
         session.doctor_summary = doctor_summary
         session.save()
-
         return Response({"message": "Doctor summary updated successfully."}, status=status.HTTP_200_OK)
