@@ -9,7 +9,7 @@ load_dotenv()
 DATABASES = {
     'default': dj_database_url.parse(
         os.getenv("DATABASE_URL"),
-        conn_max_age=600,
+        conn_max_age=0,                     # important with transaction pooling
         ssl_require= False
     )
 }
