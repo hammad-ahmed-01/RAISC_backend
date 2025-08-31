@@ -34,6 +34,7 @@ class ChatbotProfile(models.Model):
     session_end_msg = models.IntegerField(default=0)
     important_messages = models.TextField(null=True, blank=True)  # Highlighted messages
     date = models.DateTimeField(auto_now_add=True)  # Change to DateTimeField for accurate timestamp
+    topic = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"Chatbot Profile - {self.patient.username} ({self.date.strftime('%Y-%m-%d %H:%M:%S')})"

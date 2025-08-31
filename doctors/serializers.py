@@ -183,6 +183,7 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
             "collected_data",
             "session_summary",
             "important_messages",
+            "topic",
             "date",
             "session_start_msg",
             "session_end_msg",
