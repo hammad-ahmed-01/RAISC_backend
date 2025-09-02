@@ -1,5 +1,7 @@
 from django.urls import path
-from .views import UpdateDoctorSummaryView, DoctorLandingPageView, DoctorSessionsView, ListDoctorsView, RequestDoctorView, CheckDoctorRequestView, ListDoctorRequestsView, ManageDoctorRequestView, DoctorPatientsView, ChatbotProfileListView, ImportantMessagesView, CreateDoctorSessionView
+from users.views import ChangeEmailView, ChangePasswordView
+from .views import DoctorMeProfileView, UpdateDoctorSummaryView, DoctorLandingPageView, DoctorSessionsView, ListDoctorsView, RequestDoctorView, CheckDoctorRequestView, ListDoctorRequestsView, ManageDoctorRequestView, DoctorPatientsView, ChatbotProfileListView, ImportantMessagesView, CreateDoctorSessionView
+
 urlpatterns = [
     path('dashboard/', DoctorLandingPageView.as_view(), name='doctor-dashboard'),
     path("requests/", ListDoctorRequestsView.as_view(), name="doctor-requests"),
@@ -13,4 +15,9 @@ urlpatterns = [
     path("patients/", DoctorPatientsView.as_view(), name="doctor-patients"),
     path("chatbot-data/<int:patient_id>/", ChatbotProfileListView.as_view(), name="chatbot-profile"),
     path("chatbot-data/<int:patient_id>/important-messages/", ImportantMessagesView.as_view(), name="important-messages"),
+
+
+    path('profile/', DoctorMeProfileView.as_view(), name='doctor-profile'),
+    path('change-password/', ChangePasswordView.as_view(), name='doctor-change-password'),
+    path("change-email/", ChangeEmailView.as_view(), name="doctor-change-email"),
 ]

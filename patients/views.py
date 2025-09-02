@@ -13,6 +13,7 @@ from rest_framework.permissions import AllowAny
 from django.utils.dateparse import parse_datetime
 from django.db import IntegrityError
 from django.db.models import Q
+from rest_framework.authentication import TokenAuthentication
 
 class PatientLandingPageView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPatientUser]
@@ -202,3 +203,28 @@ class DoctorSummaryView(APIView):
             return Response({"error": "No doctor summary found."}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"doctor_summary": latest_calendar.doctor_summary}, status=status.HTTP_200_OK)
+    
+class PatientMeProfileView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        try:
+            pp = PatientProfile.objects.get(user=request.user)
+        except PatientProfile.DoesNotExist:
+            # initialize an empty one if desired
+            pp = PatientProfile.objects.create(user=request.user, level=0, profile_data={})
+
+        pd = dict(pp.profile_data or {})
+        data = {
+            "display_name": pd.get("display_name", f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username),
+            "email": request.user.email,
+            "phone": pd.get("phone", ""),
+            "age": pd.get("age", ""),
+            "condition": pd.get("condition", ""),
+            "emergency_contact": pd.get("emergency_contact", ""),
+            "location": pd.get("location", ""),
+            "therapyFocus": pd.get("therapyFocus", ""),
+            "bio": pd.get("bio", ""),
+        }
+        return Response(data, status=status.HTTP_200_OK)

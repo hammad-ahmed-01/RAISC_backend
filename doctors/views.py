@@ -1,5 +1,4 @@
 from django.shortcuts import get_object_or_404
-
 from rest_framework import permissions, generics, status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.views import APIView
@@ -19,11 +18,6 @@ from .serializers import (
     DoctorViewPatientSerializer,
     ChatbotProfileSerializer,
 )
-
-# If you have custom permissions in users.permissions, you can import them.
-# We'll use DRF's IsAuthenticated by default to avoid name collisions.
-# from users.permissions import IsDoctorUser, IsAuthenticated  # optional custom classes
-
 
 # -------------------------
 # Doctor dashboard landing
@@ -271,3 +265,28 @@ class UpdateDoctorSummaryView(APIView):
         session.doctor_summary = doctor_summary
         session.save()
         return Response({"message": "Doctor summary updated successfully."}, status=status.HTTP_200_OK)
+
+
+class DoctorMeProfileView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        try:
+            doc = Doctor.objects.get(user=request.user)
+        except Doctor.DoesNotExist:
+            return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        pi = dict(doc.professional_information or {})
+        data = {
+            "display_name": pi.get("display_name", f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username),
+            "email": request.user.email,
+            "phone": pi.get("phone", ""),
+            "specialization": pi.get("specialization", ""),
+            "experience": pi.get("experience", ""),
+            "qualifications": pi.get("qualifications", ""),
+            "bio": pi.get("bio", ""),
+            "organization": pi.get("organization", ""),
+            "location": pi.get("location", ""),
+        }
+        return Response(data, status=status.HTTP_200_OK)

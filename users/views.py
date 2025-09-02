@@ -3,6 +3,10 @@ from rest_framework import views, generics, permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.authentication import TokenAuthentication
+from doctors.models import Doctor
+from patients.models import PatientProfile
+
 
 from .serializers import (
     UserSerializer,
@@ -92,3 +96,276 @@ class CalendarListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Calendar.objects.all()
+    
+
+class MeProfileUpdateView(views.APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    # keys that go into Doctor.professional_information JSON
+    DOCTOR_KEYS = {"specialization", "experience", "qualifications", "display_name", "phone", "bio", "location", "organization"}
+
+    # keys that go into PatientProfile.profile_data JSON
+    PATIENT_KEYS = {"display_name", "phone", "bio", "location", "age", "condition", "emergency_contact", "therapyFocus"}
+
+    def patch(self, request):
+        user = request.user
+        data = dict(request.data or {})
+
+        # --- Update email on User (kept for completeness) ---
+        if "email" in data:
+            email = (data.get("email") or "").strip().lower()
+            if email and email != user.email:
+                user.email = email
+                user.save(update_fields=["email"])
+
+        # --- NEW: Update username on User (unique, case-insensitive) ---
+        if "username" in data:
+            new_username = (data.get("username") or "").strip()
+            if new_username and new_username.lower() != (user.username or "").lower():
+                # ensure uniqueness (case-insensitive), excluding current user
+                if UserModel.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
+                    return Response(
+                        {"error": "This username is already taken."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                user.username = new_username
+                user.save(update_fields=["username"])
+
+        role = getattr(user, "user_type", "")
+
+        if role == "doctor":
+            # ensure doctor profile exists
+            try:
+                doc = Doctor.objects.get(user=user)
+            except Doctor.DoesNotExist:
+                return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            prof = dict(doc.professional_information or {})
+            for k, v in data.items():
+                if k in self.DOCTOR_KEYS:
+                    # optional: turn textarea qualifications into array if you prefer
+                    if k == "qualifications" and isinstance(v, str):
+                        # store as string; or split lines here if you want array
+                        prof[k] = v
+                    else:
+                        prof[k] = v
+
+            doc.professional_information = prof
+            doc.save(update_fields=["professional_information"])
+
+            # return flattened doctor profile (include username)
+            pi = dict(doc.professional_information or {})
+            resp = {
+                "username": user.username,
+                "display_name": pi.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
+                "email": user.email,
+                "phone": pi.get("phone", ""),
+                "specialization": pi.get("specialization", ""),
+                "experience": pi.get("experience", ""),
+                "qualifications": pi.get("qualifications", ""),
+                "bio": pi.get("bio", ""),
+                "organization": pi.get("organization", ""),
+                "location": pi.get("location", ""),
+                "user_type": "doctor",
+            }
+            return Response(resp, status=status.HTTP_200_OK)
+
+        elif role == "patient":
+            # ensure patient profile exists
+            profile, _ = PatientProfile.objects.get_or_create(user=user)
+            pd = dict(profile.profile_data or {})
+            for k, v in data.items():
+                if k in self.PATIENT_KEYS:
+                    if k == "therapyFocus":
+                        pd["therapyFocus"] = v
+                    else:
+                        pd[k] = v
+
+            profile.profile_data = pd
+            profile.save(update_fields=["profile_data"])
+
+            # return flattened patient profile (include username)
+            resp = {
+                "username": user.username,
+                "display_name": pd.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
+                "email": user.email,
+                "phone": pd.get("phone", ""),
+                "age": pd.get("age", ""),
+                "condition": pd.get("condition", ""),
+                "emergency_contact": pd.get("emergency_contact", ""),
+                "location": pd.get("location", ""),
+                "therapyFocus": pd.get("therapyFocus", ""),
+                "bio": pd.get("bio", ""),
+                "user_type": "patient",
+            }
+            return Response(resp, status=status.HTTP_200_OK)
+
+        # Fallback for other roles (if any)
+        return Response(
+            {"detail": "Profile updated", "email": user.email, "username": user.username},
+            status=status.HTTP_200_OK
+        )
+class MeProfileUpdateView(views.APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    # keys that go into Doctor.professional_information JSON
+    DOCTOR_KEYS = {"specialization", "experience", "qualifications", "display_name", "phone", "bio", "location", "organization"}
+
+    # keys that go into PatientProfile.profile_data JSON
+    PATIENT_KEYS = {"display_name", "phone", "bio", "location", "age", "condition", "emergency_contact", "therapyFocus"}
+
+    def patch(self, request):
+        user = request.user
+        data = dict(request.data or {})
+
+        # --- Update email on User (kept for completeness) ---
+        if "email" in data:
+            email = (data.get("email") or "").strip().lower()
+            if email and email != user.email:
+                user.email = email
+                user.save(update_fields=["email"])
+
+        # --- NEW: Update username on User (unique, case-insensitive) ---
+        if "username" in data:
+            new_username = (data.get("username") or "").strip()
+            if new_username and new_username.lower() != (user.username or "").lower():
+                # ensure uniqueness (case-insensitive), excluding current user
+                if UserModel.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
+                    return Response(
+                        {"error": "This username is already taken."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                user.username = new_username
+                user.save(update_fields=["username"])
+
+        role = getattr(user, "user_type", "")
+
+        if role == "doctor":
+            # ensure doctor profile exists
+            try:
+                doc = Doctor.objects.get(user=user)
+            except Doctor.DoesNotExist:
+                return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            prof = dict(doc.professional_information or {})
+            for k, v in data.items():
+                if k in self.DOCTOR_KEYS:
+                    # optional: turn textarea qualifications into array if you prefer
+                    if k == "qualifications" and isinstance(v, str):
+                        # store as string; or split lines here if you want array
+                        prof[k] = v
+                    else:
+                        prof[k] = v
+
+            doc.professional_information = prof
+            doc.save(update_fields=["professional_information"])
+
+            # return flattened doctor profile (include username)
+            pi = dict(doc.professional_information or {})
+            resp = {
+                "username": user.username,
+                "display_name": pi.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
+                "email": user.email,
+                "phone": pi.get("phone", ""),
+                "specialization": pi.get("specialization", ""),
+                "experience": pi.get("experience", ""),
+                "qualifications": pi.get("qualifications", ""),
+                "bio": pi.get("bio", ""),
+                "organization": pi.get("organization", ""),
+                "location": pi.get("location", ""),
+                "user_type": "doctor",
+            }
+            return Response(resp, status=status.HTTP_200_OK)
+
+        elif role == "patient":
+            # ensure patient profile exists
+            profile, _ = PatientProfile.objects.get_or_create(user=user)
+            pd = dict(profile.profile_data or {})
+            for k, v in data.items():
+                if k in self.PATIENT_KEYS:
+                    if k == "therapyFocus":
+                        pd["therapyFocus"] = v
+                    else:
+                        pd[k] = v
+
+            profile.profile_data = pd
+            profile.save(update_fields=["profile_data"])
+
+            # return flattened patient profile (include username)
+            resp = {
+                "username": user.username,
+                "display_name": pd.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
+                "email": user.email,
+                "phone": pd.get("phone", ""),
+                "age": pd.get("age", ""),
+                "condition": pd.get("condition", ""),
+                "emergency_contact": pd.get("emergency_contact", ""),
+                "location": pd.get("location", ""),
+                "therapyFocus": pd.get("therapyFocus", ""),
+                "bio": pd.get("bio", ""),
+                "user_type": "patient",
+            }
+            return Response(resp, status=status.HTTP_200_OK)
+
+        # Fallback for other roles (if any)
+        return Response(
+            {"detail": "Profile updated", "email": user.email, "username": user.username},
+            status=status.HTTP_200_OK
+        )
+
+class ChangePasswordView(views.APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get("current_password") or ""
+        new_password = request.data.get("new_password") or ""
+
+        if not current_password or not new_password:
+            return Response({"error": "Both current_password and new_password are required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if not user.check_password(current_password):
+            return Response({"error": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        # (Optional) rotate token if you want to force re-login elsewhere
+        return Response({"detail": "Password updated successfully."}, status=status.HTTP_200_OK)
+
+class ChangeEmailView(views.APIView):
+    """
+    POST /users/patient/change-email/
+    POST /users/doctor/change-email/
+    Body: {"current_email": "...", "new_email": "..."}
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_email = (request.data.get("current_email") or "").strip().lower()
+        new_email = (request.data.get("new_email") or "").strip().lower()
+
+        if not current_email or not new_email:
+            return Response({"error": "Both current_email and new_email are required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if user.email.strip().lower() != current_email:
+            return Response({"error": "Current email does not match your account email."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if current_email == new_email:
+            return Response({"error": "New email must be different from current email."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # (Optional) add uniqueness check if email must be unique
+        # if User.objects.filter(email=new_email).exclude(id=user.id).exists():
+        #     return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.email = new_email
+        user.save(update_fields=["email"])
+        return Response({"detail": "Email updated successfully.", "email": user.email}, status=status.HTTP_200_OK)

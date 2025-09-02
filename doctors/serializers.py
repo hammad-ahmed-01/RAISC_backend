@@ -188,3 +188,27 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
             "session_start_msg",
             "session_end_msg",
         ]
+
+class DoctorProfileSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Doctor
+        fields = ["id", "user", "professional_information", "chatgroup_nickname", "rates"]
+        extra_kwargs = {"professional_information": {"required": False}}
+
+    def get_user(self, obj):
+        u = obj.user
+        return {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "user_type": getattr(u, "user_type", ""),
+        }
+
+    def update(self, instance, validated_data):
+        prof = validated_data.pop("professional_information", None)
+        if prof is not None:
+            merged = {**(instance.professional_information or {}), **prof}
+            instance.professional_information = merged
+        return super().update(instance, validated_data)
