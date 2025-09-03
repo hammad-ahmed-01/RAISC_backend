@@ -285,7 +285,7 @@ class DoctorMeProfileView(APIView):
             "specialization": pi.get("specialization", ""),
             "experience": pi.get("experience", ""),
             "qualifications": pi.get("qualifications", ""),
-            "bio": pi.get("bio", ""),
+            "description": pi.get("description", ""),
             "organization": pi.get("organization", ""),
             "location": pi.get("location", ""),
         }

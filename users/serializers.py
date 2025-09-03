@@ -201,6 +201,7 @@ class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                     return [str(x) for x in v]
                 return [s.strip() for s in str(v or "").split(",") if s.strip()]
 
+            # NOTE: store "description" (About me); do not store "bio" for doctors anymore
             prof_info = {
                 "display_name": dp_in.get("display_name") or full_name,
                 "specialization": dp_in.get("specialization", ""),
@@ -210,6 +211,7 @@ class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                 "expertise": to_list(dp_in.get("expertise")),
                 "profile_image": dp_in.get("profile_image", ""),
                 "rating": float(dp_in.get("rating", 0) or 0),
+                "description": dp_in.get("description", ""),  # <-- NEW
             }
             rates_val = dp_in.get("rates", "0")
             try:

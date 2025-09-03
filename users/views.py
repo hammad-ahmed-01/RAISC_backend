@@ -213,13 +213,14 @@ class MeProfileUpdateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     # keys that go into Doctor.professional_information JSON
-    # (added: location, education, experience, profile_image, qualifications, specialization)
+    # (removed: bio)  (added: education, profile_image, expertise, rating, description)
     DOCTOR_KEYS = {
         "specialization", "experience", "qualifications", "display_name", "phone",
-        "bio", "location", "organization", "education", "profile_image", "expertise", "rating"
+        "location", "organization", "education", "profile_image", "expertise", "rating",
+        "description",   # <-- use this instead of bio
     }
 
-    # keys that go into PatientProfile.profile_data JSON (unchanged)
+    # keys that go into PatientProfile.profile_data JSON (unchanged for patients)
     PATIENT_KEYS = {
         "display_name", "phone", "bio", "location", "age",
         "condition", "emergency_contact", "therapyFocus"
@@ -237,13 +238,17 @@ class MeProfileUpdateView(views.APIView):
             "specialization": pi.get("specialization", ""),
             "experience": pi.get("experience", ""),
             "qualifications": pi.get("qualifications", ""),
-            "bio": pi.get("bio", ""),
             "organization": pi.get("organization", ""),
             "location": pi.get("location", ""),
 
-            # NEW fields surfaced
+            # NEW surfaced fields
             "education": pi.get("education", ""),
             "profile_image": pi.get("profile_image", ""),
+            "expertise": pi.get("expertise", []),
+            "rating": pi.get("rating", 0),
+
+            # About me
+            "description": pi.get("description", ""),
 
             # actual column on Doctor
             "rates": str(doc.rates) if doc.rates is not None else "",
@@ -263,7 +268,7 @@ class MeProfileUpdateView(views.APIView):
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
             "therapyFocus": pd.get("therapyFocus", ""),
-            "bio": pd.get("bio", ""),
+            "bio": pd.get("bio", ""),  # bio remains for patients
             "user_type": "patient",
         }
 
@@ -302,7 +307,7 @@ class MeProfileUpdateView(views.APIView):
         if "username" in data:
             new_username = (data.get("username") or "").strip()
             if new_username and new_username.lower() != (user.username or "").lower():
-                if UserModel.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
+                if User.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
                     return Response({"error": "This username is already taken."}, status=status.HTTP_400_BAD_REQUEST)
                 user.username = new_username
                 user.save(update_fields=["username"])
@@ -319,15 +324,13 @@ class MeProfileUpdateView(views.APIView):
             prof = dict(doc.professional_information or {})
             for k, v in data.items():
                 if k in self.DOCTOR_KEYS:
-                    # keep qualifications as string (frontend may split for UI)
-                    prof[k] = v
+                    prof[k] = v  # keep everything as-is; FE can send arrays for expertise, etc.
             doc.professional_information = prof
 
             # Update rates (actual DB column)
             if "rates" in data:
                 raw = str(data.get("rates", "")).strip()
                 try:
-                    # allow "480" or "480.00"
                     doc.rates = Decimal(raw) if raw != "" else doc.rates
                 except (InvalidOperation, TypeError, ValueError):
                     return Response({"error": "Invalid rates value."}, status=status.HTTP_400_BAD_REQUEST)
