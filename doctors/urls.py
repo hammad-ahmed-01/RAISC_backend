@@ -1,6 +1,6 @@
 from django.urls import path
 from users.views import ChangeEmailView, ChangePasswordView
-from .views import DoctorMeProfileView, UpdateDoctorSummaryView, DoctorLandingPageView, DoctorSessionsView, ListDoctorsView, RequestDoctorView, CheckDoctorRequestView, ListDoctorRequestsView, ManageDoctorRequestView, DoctorPatientsView, ChatbotProfileListView, ImportantMessagesView, CreateDoctorSessionView
+from .views import DoctorMeProfileView, DoctorRateView, UpdateDoctorSummaryView, DoctorLandingPageView, DoctorSessionsView, ListDoctorsView, RequestDoctorView, CheckDoctorRequestView, ListDoctorRequestsView, ManageDoctorRequestView, DoctorPatientsView, ChatbotProfileListView, ImportantMessagesView, CreateDoctorSessionView
 
 urlpatterns = [
     path('dashboard/', DoctorLandingPageView.as_view(), name='doctor-dashboard'),
@@ -20,4 +20,6 @@ urlpatterns = [
     path('profile/', DoctorMeProfileView.as_view(), name='doctor-profile'),
     path('change-password/', ChangePasswordView.as_view(), name='doctor-change-password'),
     path("change-email/", ChangeEmailView.as_view(), name="doctor-change-email"),
+
+    path("rate/<int:doctor_id>/", DoctorRateView.as_view(), name="doctor-rate"),
 ]

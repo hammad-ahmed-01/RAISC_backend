@@ -5,10 +5,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Avg, Count
 
 from users.models import User, Calendar
 from patients.models import PatientProfile, ChatbotProfile
-from .models import Doctor, DoctorRequest
+from .models import Doctor, DoctorRequest, DoctorRating
 
 from .serializers import (
     DoctorProfileSerializer,
@@ -17,6 +18,7 @@ from .serializers import (
     DoctorRequestPostSerializer,
     DoctorViewPatientSerializer,
     ChatbotProfileSerializer,
+    DoctorRatingSerializer,  # NEW
 )
 
 # -------------------------
@@ -24,17 +26,14 @@ from .serializers import (
 # -------------------------
 
 class DoctorLandingPageView(APIView):
-    permission_classes = [permissions.IsAuthenticated]  # add IsDoctorUser if you have it
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # Assuming Doctor model has OneToOne related_name="doctor_profile"
         doctor_profile = getattr(request.user, "doctor_profile", None)
         if not doctor_profile:
             return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
         profile_data = DoctorProfileSerializer(doctor_profile).data
-
-        # Keep user payload minimal to avoid heavy nesting:
         user_data = {
             "id": request.user.id,
             "username": request.user.username,
@@ -49,7 +48,6 @@ class DoctorLandingPageView(APIView):
                 "message": "Welcome to your doctor dashboard.",
             }
         )
-
 
 # -------------------------
 # Doctor's calendar entries
@@ -104,7 +102,6 @@ class ListDoctorsView(generics.ListAPIView):
     serializer_class = DoctorProfileSerializer
     pagination_class = None
 
-
 # -------------------------
 # Patient ↔ Doctor requests
 # -------------------------
@@ -121,11 +118,9 @@ class RequestDoctorView(APIView):
         if getattr(patient, "user_type", "") != "patient":
             return Response({"error": "Only patients can request a doctor."}, status=status.HTTP_403_FORBIDDEN)
 
-        # doctor_id is Doctor.pk as used on the frontend
         doc = get_object_or_404(Doctor, id=doctor_id)
         doctor_user = doc.user
 
-        # prevent duplicates
         if DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists():
             return Response({"error": "You have already requested this doctor."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -153,9 +148,6 @@ class CheckDoctorRequestView(APIView):
 
 
 class ListDoctorRequestsView(generics.ListAPIView):
-    """
-    Doctor can see their pending requests
-    """
     serializer_class = DoctorRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -164,9 +156,6 @@ class ListDoctorRequestsView(generics.ListAPIView):
 
 
 class ManageDoctorRequestView(generics.UpdateAPIView):
-    """
-    Doctor can approve/reject a specific request (PATCH with {"status": "approved"|"rejected"})
-    """
     serializer_class = DoctorRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -290,3 +279,57 @@ class DoctorMeProfileView(APIView):
             "location": pi.get("location", ""),
         }
         return Response(data, status=status.HTTP_200_OK)
+
+
+# -------------------------
+# NEW: Rate a doctor (by Doctor.id)
+# -------------------------
+
+class DoctorRateView(APIView):
+    """
+    POST /users/doctor/rate/<int:doctor_id>/
+      body: { "rating": 1..5, "comment": "optional" }
+
+    Upsert patient's rating for this doctor and return {average, count}.
+    Also writes the average back into professional_information["rating"] so
+    your existing serializers show the updated value everywhere.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, doctor_id):
+        if getattr(request.user, "user_type", "") != "patient":
+            return Response({"detail": "Only patients can submit ratings."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            stars = int(request.data.get("rating", 0))
+        except (TypeError, ValueError):
+            stars = 0
+        if stars < 1 or stars > 5:
+            return Response({"detail": "rating must be an integer between 1 and 5"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        comment = (request.data.get("comment") or "").strip()
+        doc = get_object_or_404(Doctor, id=doctor_id)
+
+        obj, created = DoctorRating.objects.get_or_create(
+            doctor=doc, patient=request.user,
+            defaults={"stars": stars, "comment": comment or None}
+        )
+        if not created:
+            obj.stars = stars
+            if comment:
+                obj.comment = comment
+            obj.save()
+
+        agg = DoctorRating.objects.filter(doctor=doc).aggregate(avg=Avg("stars"), cnt=Count("id"))
+        avg = float(agg["avg"] or 0.0)
+        cnt = int(agg["cnt"] or 0)
+
+        pi = dict(doc.professional_information or {})
+        pi["rating"] = round(avg, 1)
+        doc.professional_information = pi
+        doc.save(update_fields=["professional_information"])
+
+        return Response({"doctor_id": doc.id, "average": round(avg, 1), "count": cnt}, status=status.HTTP_200_OK)

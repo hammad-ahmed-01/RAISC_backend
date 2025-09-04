@@ -37,3 +37,30 @@ class DoctorRequest(models.Model):
 
     def __str__(self):
         return f"{self.patient.username} requested {self.doctor.username}"
+
+
+# NEW: per-patient rating for a Doctor
+class DoctorRating(models.Model):
+    """
+    Store each patient's rating for a specific Doctor (1..5), then aggregate.
+    We link to the Doctor row (not just the User) because your frontend uses Doctor.id.
+    """
+    doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name="ratings")
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="doctor_ratings",
+        limit_choices_to={'user_type': 'patient'}
+    )
+    stars = models.PositiveSmallIntegerField()  # 1..5
+    comment = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (("doctor", "patient"),)
+        indexes = [models.Index(fields=["doctor", "patient"])]
+
+    def __str__(self):
+        return f"Rating {self.stars} by patient {self.patient_id} for doctor {self.doctor_id}"

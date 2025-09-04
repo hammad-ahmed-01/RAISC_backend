@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Doctor, DoctorRequest
+from .models import Doctor, DoctorRequest, DoctorRating
 from patients.models import PatientProfile, ChatbotProfile
 from users.models import Calendar
 
@@ -189,6 +189,8 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
             "session_end_msg",
         ]
 
+
+# (Duplication of DoctorProfileSerializer existed; keep a single definition)
 class DoctorProfileSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
 
@@ -212,3 +214,16 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             merged = {**(instance.professional_information or {}), **prof}
             instance.professional_information = merged
         return super().update(instance, validated_data)
+
+
+# ----------------------
+# NEW: rating serializer
+# ----------------------
+
+class DoctorRatingSerializer(serializers.ModelSerializer):
+    rating = serializers.IntegerField(source="score", min_value=1, max_value=5)
+    comment = serializers.CharField(allow_blank=True, required=False)
+
+    class Meta:
+        model = DoctorRating
+        fields = ("rating", "comment")
