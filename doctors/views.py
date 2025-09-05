@@ -286,14 +286,6 @@ class DoctorMeProfileView(APIView):
 # -------------------------
 
 class DoctorRateView(APIView):
-    """
-    POST /users/doctor/rate/<int:doctor_id>/
-      body: { "rating": 1..5, "comment": "optional" }
-
-    Upsert patient's rating for this doctor and return {average, count}.
-    Also writes the average back into professional_information["rating"] so
-    your existing serializers show the updated value everywhere.
-    """
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
@@ -302,12 +294,15 @@ class DoctorRateView(APIView):
             return Response({"detail": "Only patients can submit ratings."},
                             status=status.HTTP_403_FORBIDDEN)
 
+        # accept either "rating" or "stars"
+        raw = request.data.get("rating", request.data.get("stars", 0))
         try:
-            stars = int(request.data.get("rating", 0))
+            stars = int(raw)
         except (TypeError, ValueError):
             stars = 0
+
         if stars < 1 or stars > 5:
-            return Response({"detail": "rating must be an integer between 1 and 5"},
+            return Response({"detail": "rating must be between 1 and 5"},
                             status=status.HTTP_400_BAD_REQUEST)
 
         comment = (request.data.get("comment") or "").strip()

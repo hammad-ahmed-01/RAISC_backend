@@ -1,19 +1,15 @@
+# doctors/serializers.py
 from rest_framework import serializers
 
 from .models import Doctor, DoctorRequest, DoctorRating
 from patients.models import PatientProfile, ChatbotProfile
 from users.models import Calendar
 
-
 # ----------------------------
 # Doctor list / profile shapes
 # ----------------------------
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
-    """
-    Full doctor profile used on the Doctors page and dashboards.
-    Embeds a minimal user dict to avoid circular imports.
-    """
     user = serializers.SerializerMethodField()
 
     class Meta:
@@ -31,9 +27,6 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
 
 
 class DoctorLimitedSerializer(serializers.ModelSerializer):
-    """
-    Minimal doctor shape (id + minimal user) for compact listings.
-    """
     user = serializers.SerializerMethodField()
 
     class Meta:
@@ -94,9 +87,6 @@ class DoctorRequestSerializer(serializers.ModelSerializer):
 # ----------------------------------------
 
 class CalendarDoctorSerializer(serializers.ModelSerializer):
-    """
-    Calendar entries for the doctor, embedding a minimal patient profile.
-    """
     patient = serializers.SerializerMethodField()
 
     class Meta:
@@ -147,9 +137,6 @@ class CalendarDoctorSerializer(serializers.ModelSerializer):
 # ----------------------------------------
 
 class DoctorViewPatientSerializer(serializers.ModelSerializer):
-    """
-    Patient profile shown to a doctor. Embed user as a dict to avoid cross-app imports.
-    """
     user = serializers.SerializerMethodField()
     profile_data = serializers.JSONField()
 
@@ -190,7 +177,7 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
         ]
 
 
-# (Duplication of DoctorProfileSerializer existed; keep a single definition)
+# keep single definition for this serializer
 class DoctorProfileSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
 
@@ -217,13 +204,13 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
 
 
 # ----------------------
-# NEW: rating serializer
+# NEW — rating serializer
 # ----------------------
-
 class DoctorRatingSerializer(serializers.ModelSerializer):
-    rating = serializers.IntegerField(source="score", min_value=1, max_value=5)
-    comment = serializers.CharField(allow_blank=True, required=False)
-
     class Meta:
         model = DoctorRating
-        fields = ("rating", "comment")
+        fields = ("stars", "comment")
+        extra_kwargs = {
+            "stars": {"min_value": 1, "max_value": 5},
+            "comment": {"required": False, "allow_blank": True},
+        }
