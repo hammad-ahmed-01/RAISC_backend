@@ -1,13 +1,21 @@
+# users/views.py
 from decimal import Decimal, InvalidOperation
+from datetime import date
+import logging
+
 from django.contrib.auth import get_user_model, authenticate
+from django.db import transaction
+
 from rest_framework import views, generics, permissions, status
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import api_view, permission_classes
+
 from doctors.models import Doctor
 from patients.models import PatientProfile
-
+from users.models import Calendar
 
 from .serializers import (
     UserSerializer,
@@ -15,11 +23,15 @@ from .serializers import (
     SimpleUserRegistrationSerializer,
     CalendarStaffSerializer,
 )
-from .permissions import IsStaffUser, IsAuthenticated
-from users.models import Calendar
+from .permissions import IsStaffUser
 
+log = logging.getLogger(__name__)
 User = get_user_model()
 
+
+# ---------------------------
+# Registration & Authentication
+# ---------------------------
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
@@ -51,7 +63,7 @@ class LoginView(views.APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        identifier = request.data.get("username")  # could be username OR email
+        identifier = request.data.get("username")
         password = request.data.get("password")
 
         if not identifier or not password:
@@ -75,16 +87,24 @@ class LoginView(views.APIView):
         return Response({"token": token.key, "user": user_data})
 
 
+# ---------------------------
+# User detail (self)
+# ---------------------------
+
 class UserDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         return self.request.user
 
 
+# ---------------------------
+# Staff-only
+# ---------------------------
+
 class StaffLandingPageView(views.APIView):
-    permission_classes = [IsAuthenticated, IsStaffUser]
+    permission_classes = [permissions.IsAuthenticated, IsStaffUser]
 
     def get(self, request):
         user_data = UserSerializer(request.user).data
@@ -92,141 +112,32 @@ class StaffLandingPageView(views.APIView):
 
 
 class CalendarListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated, IsStaffUser]
+    permission_classes = [permissions.IsAuthenticated, IsStaffUser]
     serializer_class = CalendarStaffSerializer
 
     def get_queryset(self):
         return Calendar.objects.all()
-    
+
+
+# ---------------------------
+# Profile (GET/PATCH)
+# ---------------------------
 
 class MeProfileUpdateView(views.APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
-    # keys that go into Doctor.professional_information JSON
-    DOCTOR_KEYS = {"specialization", "experience", "qualifications", "display_name", "phone", "bio", "location", "organization"}
-
-    # keys that go into PatientProfile.profile_data JSON
-    PATIENT_KEYS = {"display_name", "phone", "bio", "location", "age", "condition", "emergency_contact", "therapyFocus"}
-
-    def patch(self, request):
-        user = request.user
-        data = dict(request.data or {})
-
-        # --- Update email on User (kept for completeness) ---
-        if "email" in data:
-            email = (data.get("email") or "").strip().lower()
-            if email and email != user.email:
-                user.email = email
-                user.save(update_fields=["email"])
-
-        # --- NEW: Update username on User (unique, case-insensitive) ---
-        if "username" in data:
-            new_username = (data.get("username") or "").strip()
-            if new_username and new_username.lower() != (user.username or "").lower():
-                # ensure uniqueness (case-insensitive), excluding current user
-                if UserModel.objects.filter(username__iexact=new_username).exclude(pk=user.pk).exists():
-                    return Response(
-                        {"error": "This username is already taken."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                user.username = new_username
-                user.save(update_fields=["username"])
-
-        role = getattr(user, "user_type", "")
-
-        if role == "doctor":
-            # ensure doctor profile exists
-            try:
-                doc = Doctor.objects.get(user=user)
-            except Doctor.DoesNotExist:
-                return Response({"error": "Doctor profile not found."}, status=status.HTTP_404_NOT_FOUND)
-
-            prof = dict(doc.professional_information or {})
-            for k, v in data.items():
-                if k in self.DOCTOR_KEYS:
-                    # optional: turn textarea qualifications into array if you prefer
-                    if k == "qualifications" and isinstance(v, str):
-                        # store as string; or split lines here if you want array
-                        prof[k] = v
-                    else:
-                        prof[k] = v
-
-            doc.professional_information = prof
-            doc.save(update_fields=["professional_information"])
-
-            # return flattened doctor profile (include username)
-            pi = dict(doc.professional_information or {})
-            resp = {
-                "username": user.username,
-                "display_name": pi.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
-                "email": user.email,
-                "phone": pi.get("phone", ""),
-                "specialization": pi.get("specialization", ""),
-                "experience": pi.get("experience", ""),
-                "qualifications": pi.get("qualifications", ""),
-                "bio": pi.get("bio", ""),
-                "organization": pi.get("organization", ""),
-                "location": pi.get("location", ""),
-                "user_type": "doctor",
-            }
-            return Response(resp, status=status.HTTP_200_OK)
-
-        elif role == "patient":
-            # ensure patient profile exists
-            profile, _ = PatientProfile.objects.get_or_create(user=user)
-            pd = dict(profile.profile_data or {})
-            for k, v in data.items():
-                if k in self.PATIENT_KEYS:
-                    if k == "therapyFocus":
-                        pd["therapyFocus"] = v
-                    else:
-                        pd[k] = v
-
-            profile.profile_data = pd
-            profile.save(update_fields=["profile_data"])
-
-            # return flattened patient profile (include username)
-            resp = {
-                "username": user.username,
-                "display_name": pd.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
-                "email": user.email,
-                "phone": pd.get("phone", ""),
-                "age": pd.get("age", ""),
-                "condition": pd.get("condition", ""),
-                "emergency_contact": pd.get("emergency_contact", ""),
-                "location": pd.get("location", ""),
-                "therapyFocus": pd.get("therapyFocus", ""),
-                "bio": pd.get("bio", ""),
-                "user_type": "patient",
-            }
-            return Response(resp, status=status.HTTP_200_OK)
-
-        # Fallback for other roles (if any)
-        return Response(
-            {"detail": "Profile updated", "email": user.email, "username": user.username},
-            status=status.HTTP_200_OK
-        )
-
-class MeProfileUpdateView(views.APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
-
-    # keys that go into Doctor.professional_information JSON
-    # (removed: bio)  (added: education, profile_image, expertise, rating, description)
     DOCTOR_KEYS = {
         "specialization", "experience", "qualifications", "display_name", "phone",
         "location", "organization", "education", "profile_image", "expertise", "rating",
-        "description",   # <-- use this instead of bio
+        "description",
     }
 
-    # keys that go into PatientProfile.profile_data JSON (unchanged for patients)
     PATIENT_KEYS = {
         "display_name", "phone", "bio", "location", "age",
         "condition", "emergency_contact", "therapyFocus"
     }
 
-    # ---------- helpers ----------
     def _flatten_doctor(self, user, doc):
         pi = dict(doc.professional_information or {})
         return {
@@ -234,25 +145,17 @@ class MeProfileUpdateView(views.APIView):
             "display_name": pi.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
             "email": user.email,
             "phone": pi.get("phone", ""),
-
             "specialization": pi.get("specialization", ""),
             "experience": pi.get("experience", ""),
             "qualifications": pi.get("qualifications", ""),
             "organization": pi.get("organization", ""),
             "location": pi.get("location", ""),
-
-            # NEW surfaced fields
             "education": pi.get("education", ""),
             "profile_image": pi.get("profile_image", ""),
             "expertise": pi.get("expertise", []),
             "rating": pi.get("rating", 0),
-
-            # About me
             "description": pi.get("description", ""),
-
-            # actual column on Doctor
             "rates": str(doc.rates) if doc.rates is not None else "",
-
             "user_type": "doctor",
         }
 
@@ -268,11 +171,10 @@ class MeProfileUpdateView(views.APIView):
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
             "therapyFocus": pd.get("therapyFocus", ""),
-            "bio": pd.get("bio", ""),  # bio remains for patients
+            "bio": pd.get("bio", ""),
             "user_type": "patient",
         }
 
-    # ---------- GET current profile ----------
     def get(self, request):
         user = request.user
         role = getattr(user, "user_type", "")
@@ -288,22 +190,18 @@ class MeProfileUpdateView(views.APIView):
             profile, _ = PatientProfile.objects.get_or_create(user=user)
             return Response(self._flatten_patient(user, profile), status=200)
 
-        # staff / others: minimal
         return Response({"username": user.username, "email": user.email, "user_type": role}, status=200)
 
-    # ---------- PATCH profile ----------
     def patch(self, request):
         user = request.user
         data = dict(request.data or {})
 
-        # Email (optional)
         if "email" in data:
             email = (data.get("email") or "").strip().lower()
             if email and email != user.email:
                 user.email = email
                 user.save(update_fields=["email"])
 
-        # Username (optional; unique, case-insensitive)
         if "username" in data:
             new_username = (data.get("username") or "").strip()
             if new_username and new_username.lower() != (user.username or "").lower():
@@ -320,18 +218,17 @@ class MeProfileUpdateView(views.APIView):
             except Doctor.DoesNotExist:
                 return Response({"error": "Doctor profile not found."}, status=404)
 
-            # Update professional_information JSON
             prof = dict(doc.professional_information or {})
             for k, v in data.items():
                 if k in self.DOCTOR_KEYS:
-                    prof[k] = v  # keep everything as-is; FE can send arrays for expertise, etc.
+                    prof[k] = v
             doc.professional_information = prof
 
-            # Update rates (actual DB column)
             if "rates" in data:
                 raw = str(data.get("rates", "")).strip()
                 try:
-                    doc.rates = Decimal(raw) if raw != "" else doc.rates
+                    if raw != "":
+                        doc.rates = Decimal(raw)
                 except (InvalidOperation, TypeError, ValueError):
                     return Response({"error": "Invalid rates value."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -349,7 +246,111 @@ class MeProfileUpdateView(views.APIView):
             return Response(self._flatten_patient(user, profile), status=200)
 
         return Response({"username": user.username, "email": user.email}, status=200)
-    
+
+
+# ---------------------------
+# Account Deletion (role-aware, avoids legacy tables)
+# ---------------------------
+
+try:
+    from rest_framework_simplejwt.tokens import RefreshToken
+    SIMPLEJWT = True
+except Exception:
+    SIMPLEJWT = False
+
+
+class DeleteAccountView(views.APIView):
+    """
+    DELETE /users/account/delete/
+    Auth: Token <key>
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def delete(self, request, *args, **kwargs):
+        try:
+            user = request.user
+            role = getattr(user, "user_type", "")
+
+            # Optional JWT blacklist (ignored if not used)
+            if SIMPLEJWT:
+                refresh = request.data.get("refresh") or request.data.get("refresh_token")
+                if refresh:
+                    try:
+                        token = RefreshToken(refresh)
+                        token.blacklist()
+                    except Exception:
+                        pass
+
+            if role == "patient":
+                # Clean Calendars and PatientProfile (safe, ours)
+                try:
+                    Calendar.objects.filter(patient=user).delete()
+                except Exception as e:
+                    log.warning("Delete patient calendars failed: %s", e)
+
+                try:
+                    PatientProfile.objects.filter(user=user).delete()
+                except Exception as e:
+                    log.warning("Delete patient profile failed: %s", e)
+
+            elif role == "doctor":
+                # Unassign this doctor from patients, clean calendars and doctor profile
+                try:
+                    PatientProfile.objects.filter(associated_psychologist=user).update(associated_psychologist=None)
+                except Exception as e:
+                    log.warning("Unassign associated patients failed: %s", e)
+
+                try:
+                    Calendar.objects.filter(doctor=user).delete()
+                except Exception as e:
+                    log.warning("Delete doctor calendars failed: %s", e)
+
+                try:
+                    Doctor.objects.filter(user=user).delete()
+                except Exception as e:
+                    log.warning("Delete doctor profile failed: %s", e)
+
+            # Finally delete user
+            user.delete()
+            return Response({"detail": "Account deleted."}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            log.exception("DeleteAccountView failed")
+            return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ---------------------------
+# Small public endpoints used by FE (optional)
+# ---------------------------
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def daily_quote_view(request):
+    quotes = [
+        {"text": "You don’t have to control your thoughts. You just have to stop letting them control you.", "author": "Dan Millman"},
+        {"text": "It’s okay to not be okay, as long as you are not giving up.", "author": "Karen Salmansohn"},
+        {"text": "Nothing can dim the light that shines from within.", "author": "Maya Angelou"},
+        {"text": "Feelings are like waves; we can’t stop them, but we can choose which one to surf.", "author": "Jonatan Mårtensson"},
+        {"text": "What mental health needs is more sunlight, more candor, and more unashamed conversation.", "author": "Glenn Close"},
+    ]
+    idx = date.today().toordinal() % len(quotes)
+    return Response({"quote": quotes[idx]}, status=200)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def chatbot_info_view(request):
+    info = {
+        "name": "RAISC Assistant",
+        "description": "An AI companion for mental wellness — supportive, confidential, and available 24/7.",
+        "capabilities": ["mood check-ins", "journaling prompts", "psychoeducation", "crisis resource guidance"],
+        "disclaimer": "Not a substitute for professional diagnosis or treatment.",
+    }
+    return Response(info, status=200)
+
+
 class ChangePasswordView(views.APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
@@ -368,8 +369,8 @@ class ChangePasswordView(views.APIView):
 
         user.set_password(new_password)
         user.save()
-        # (Optional) rotate token if you want to force re-login elsewhere
         return Response({"detail": "Password updated successfully."}, status=status.HTTP_200_OK)
+
 
 class ChangeEmailView(views.APIView):
     """
@@ -389,7 +390,7 @@ class ChangeEmailView(views.APIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
-        if user.email.strip().lower() != current_email:
+        if (user.email or "").strip().lower() != current_email:
             return Response({"error": "Current email does not match your account email."},
                             status=status.HTTP_400_BAD_REQUEST)
 
@@ -397,7 +398,7 @@ class ChangeEmailView(views.APIView):
             return Response({"error": "New email must be different from current email."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # (Optional) add uniqueness check if email must be unique
+        # (Optional) uniqueness check
         # if User.objects.filter(email=new_email).exclude(id=user.id).exists():
         #     return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
 
