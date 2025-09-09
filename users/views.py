@@ -321,36 +321,6 @@ class DeleteAccountView(views.APIView):
             return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ---------------------------
-# Small public endpoints used by FE (optional)
-# ---------------------------
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def daily_quote_view(request):
-    quotes = [
-        {"text": "You don’t have to control your thoughts. You just have to stop letting them control you.", "author": "Dan Millman"},
-        {"text": "It’s okay to not be okay, as long as you are not giving up.", "author": "Karen Salmansohn"},
-        {"text": "Nothing can dim the light that shines from within.", "author": "Maya Angelou"},
-        {"text": "Feelings are like waves; we can’t stop them, but we can choose which one to surf.", "author": "Jonatan Mårtensson"},
-        {"text": "What mental health needs is more sunlight, more candor, and more unashamed conversation.", "author": "Glenn Close"},
-    ]
-    idx = date.today().toordinal() % len(quotes)
-    return Response({"quote": quotes[idx]}, status=200)
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def chatbot_info_view(request):
-    info = {
-        "name": "RAISC Assistant",
-        "description": "An AI companion for mental wellness — supportive, confidential, and available 24/7.",
-        "capabilities": ["mood check-ins", "journaling prompts", "psychoeducation", "crisis resource guidance"],
-        "disclaimer": "Not a substitute for professional diagnosis or treatment.",
-    }
-    return Response(info, status=200)
-
-
 class ChangePasswordView(views.APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]

@@ -103,59 +103,71 @@ class ListDoctorsView(generics.ListAPIView):
     pagination_class = None
 
 # -------------------------
-# Patient ↔ Doctor requests
+# Patient ↔ Doctor requests (UPDATED)
 # -------------------------
 
 class RequestDoctorView(APIView):
-    """
-    POST /users/doctor/request/<doctor_id>/
-    NOTE: <doctor_id> here is the Doctor.pk (not User.pk)
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, doctor_id):
         patient = request.user
         if getattr(patient, "user_type", "") != "patient":
-            return Response({"error": "Only patients can request a doctor."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Only patients can request a doctor."}, status=403)
 
-        doc = get_object_or_404(Doctor, id=doctor_id)
-        doctor_user = doc.user
+        # doctor_id is Doctor.pk -> resolve to User
+        doc_obj = get_object_or_404(Doctor, id=doctor_id)
+        doctor_user = doc_obj.user
 
-        if DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists():
-            return Response({"error": "You have already requested this doctor."}, status=status.HTTP_400_BAD_REQUEST)
+        # Block duplicates if there's already an active request
+        if DoctorRequest.objects.filter(
+            patient=patient,
+            doctor=doctor_user,
+            status__in=["pending", "approved"],  # matches your current choices
+        ).exists():
+            return Response({"error": "You have already requested this doctor."}, status=400)
 
-        req = DoctorRequest.objects.create(patient=patient, doctor=doctor_user)
-        return Response(DoctorRequestPostSerializer(req).data, status=status.HTTP_201_CREATED)
+        dr = DoctorRequest.objects.create(patient=patient, doctor=doctor_user, status="pending")
+        from .serializers import DoctorRequestPostSerializer
+        return Response(DoctorRequestPostSerializer(dr).data, status=201)
 
 
 class CheckDoctorRequestView(APIView):
-    """
-    GET /users/doctor/request/<doctor_id>/status/
-    NOTE: <doctor_id> is Doctor.pk
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, doctor_id):
         patient = request.user
         if getattr(patient, "user_type", "") != "patient":
-            return Response({"error": "Only patients can check requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Only patients can check requests."}, status=403)
 
-        doc = get_object_or_404(Doctor, id=doctor_id)
-        doctor_user = doc.user
+        # doctor_id is Doctor.pk -> resolve to User
+        doc_obj = get_object_or_404(Doctor, id=doctor_id)
+        doctor_user = doc_obj.user
 
         exists = DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists()
-        return Response({"requested": exists})
-
+        return Response({"requested": exists}, status=200)
 
 class ListDoctorRequestsView(generics.ListAPIView):
+    """
+    GET /users/doctor/requests/
+    Lists PENDING requests for the authenticated doctor (User).
+    """
     serializer_class = DoctorRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return DoctorRequest.objects.filter(doctor=self.request.user, status="pending").order_by("-requested_at")
+        # doctor is a User on the DoctorRequest model in your code
+        return (DoctorRequest.objects
+                .filter(doctor=self.request.user, status="pending")
+                .order_by("-requested_at"))
 
 
 class ManageDoctorRequestView(generics.UpdateAPIView):
+    """
+    PATCH /users/doctor/manage-request/<pk>/
+    Body: { "status": "accepted" | "request_again" }
+    - accepted -> associate patient with this doctor (User)
+    - request_again -> no association, just flip status
+    """
     serializer_class = DoctorRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -166,21 +178,28 @@ class ManageDoctorRequestView(generics.UpdateAPIView):
         doctor_request = self.get_object()
         new_status = (request.data.get("status") or "").lower()
 
-        if new_status not in {"approved", "rejected"}:
-            return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
+        if new_status not in {"accepted", "request_again"}:
+            return Response({"error": "Invalid status. Use 'accepted' or 'request_again'."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
+        # Apply status change
         doctor_request.status = new_status
-        doctor_request.save()
+        doctor_request.save(update_fields=["status"])
 
-        if new_status == "approved":
+        if new_status == "accepted":
+            # Associate patient with this doctor (User)
             try:
                 pp = PatientProfile.objects.get(user=doctor_request.patient)
-                pp.associated_psychologist = doctor_request.doctor
-                pp.level = max(2, pp.level or 0)
-                pp.save()
             except PatientProfile.DoesNotExist:
-                return Response({"error": "Patient profile not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"error": "Patient profile not found."},
+                                status=status.HTTP_404_NOT_FOUND)
 
+            pp.associated_psychologist = doctor_request.doctor  # doctor is a User in your code
+            # Optional: bump level if you want
+            pp.level = max(2, pp.level or 0)
+            pp.save(update_fields=["associated_psychologist", "level"])
+
+        # When request_again -> nothing else (patient can re-request later)
         return Response({"message": f"Request {new_status} successfully"}, status=status.HTTP_200_OK)
 
 
