@@ -347,3 +347,35 @@ class DoctorRateView(APIView):
         doc.save(update_fields=["professional_information"])
 
         return Response({"doctor_id": doc.id, "average": round(avg, 1), "count": cnt}, status=status.HTTP_200_OK)
+    
+    # Reschedule session
+    # doctors/views.py
+class RescheduleDoctorSessionView(APIView):
+    """
+    Allows doctor to update/reschedule an existing session.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, session_id):
+        data = request.data
+        title = data.get("title", "").strip()
+        description = data.get("description", "").strip()
+        date = data.get("date")
+
+        # Validate
+        if not (title and date):
+            return Response({"error": "Missing required fields."}, status=400)
+
+        session = get_object_or_404(Calendar, id=session_id)
+
+        # Ensure this doctor owns the session
+        if session.doctor != request.user:
+            return Response({"error": "Not authorized"}, status=403)
+
+        session.title = title
+        session.description = description
+        session.date = date
+        session.save()
+
+        return Response({"message": "Session rescheduled successfully.", "session_id": session.id}, status=200)
