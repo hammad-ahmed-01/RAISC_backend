@@ -214,3 +214,70 @@ class DoctorRatingSerializer(serializers.ModelSerializer):
             "stars": {"min_value": 1, "max_value": 5},
             "comment": {"required": False, "allow_blank": True},
         }
+
+# ----------------------
+# NEW — current psychologist for patient / self for doctor
+# ----------------------
+class CurrentPsychologistSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Doctor
+        fields = ["id", "user", "professional_information", "chatgroup_nickname", "rates"]
+
+    def get_user(self, obj):
+        u = obj.user
+        return {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "user_type": getattr(u, "user_type", ""),
+        }
+
+
+# ----------------------
+# NEW — latest session serializer (patient/doctor)
+# ----------------------
+class LatestSessionSerializer(serializers.ModelSerializer):
+    session_number = serializers.SerializerMethodField()
+    summary = serializers.SerializerMethodField()
+    display_datetime = serializers.SerializerMethodField()
+    feedback = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Calendar
+        fields = [
+            "id",
+            "title",
+            "date",
+            "description",
+            "session_number",
+            "summary",
+            "display_datetime",
+            "feedback",
+        ]
+
+    def get_summary(self, obj):
+        return obj.doctor_summary or ""
+
+    def get_feedback(self, obj):
+        return obj.patient_update or None
+
+    def get_display_datetime(self, obj):
+        try:
+            return obj.date.strftime("%B %d, %Y – %I:%M %p").lstrip("0").replace(" 0", " ")
+        except Exception:
+            return None
+
+    def get_session_number(self, obj):
+        patient = getattr(obj, "patient", None)
+        if not patient:
+            return 1
+        qs = (Calendar.objects
+              .filter(patient=patient, date__lte=obj.date)
+              .order_by("date")
+              .values_list("id", flat=True))
+        try:
+            return list(qs).index(obj.id) + 1
+        except ValueError:
+            return qs.count() or 1

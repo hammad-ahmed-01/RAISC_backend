@@ -13,13 +13,15 @@ from patients.models import PatientProfile, ChatbotProfile
 from .models import Doctor, DoctorRequest, DoctorRating
 
 from .serializers import (
+    CurrentPsychologistSerializer,
     DoctorProfileSerializer,
     CalendarDoctorSerializer,
     DoctorRequestSerializer,
     DoctorRequestPostSerializer,
     DoctorViewPatientSerializer,
     ChatbotProfileSerializer,
-    DoctorRatingSerializer,  # NEW
+    DoctorRatingSerializer,
+    LatestSessionSerializer,  # NEW
 )
 
 # -------------------------
@@ -398,3 +400,97 @@ class DeleteDoctorSessionView(APIView):
 
         session.delete()
         return Response({"message": "Session deleted successfully."}, status=status.HTTP_200_OK)
+    
+# -------------------------
+# NEW: Current Psychologist endpoint
+# -------------------------
+
+class CurrentPsychologistView(APIView):
+    """
+    GET the current psychologist for the logged-in user.
+    - If user is a PATIENT: returns their associated_psychologist (Doctor row)
+    - If user is a DOCTOR: returns their own Doctor row
+    - Otherwise: 404
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user_type = getattr(request.user, "user_type", "")
+
+        if user_type == "patient":
+            try:
+                pp = PatientProfile.objects.select_related("associated_psychologist").get(user=request.user)
+            except PatientProfile.DoesNotExist:
+                return Response({"detail": "Patient profile not found."}, status=404)
+
+            if not pp.associated_psychologist:
+                return Response({"detail": "No psychologist associated."}, status=404)
+
+            # associated_psychologist is a User; resolve to Doctor row
+            try:
+                doc = Doctor.objects.select_related("user").get(user=pp.associated_psychologist)
+            except Doctor.DoesNotExist:
+                return Response({"detail": "Doctor profile not found."}, status=404)
+
+            return Response(CurrentPsychologistSerializer(doc).data, status=200)
+
+        elif user_type == "doctor":
+            try:
+                doc = Doctor.objects.select_related("user").get(user=request.user)
+            except Doctor.DoesNotExist:
+                return Response({"detail": "Doctor profile not found."}, status=404)
+            return Response(CurrentPsychologistSerializer(doc).data, status=200)
+
+        return Response({"detail": "Unsupported user type."}, status=404)
+
+
+# -------------------------
+# NEW: Latest session endpoint
+# -------------------------
+
+class LatestSessionView(APIView):
+    """
+    Returns the most recent Calendar session for the authenticated user.
+    - If user is a patient → last session where patient=request.user
+    - If user is a doctor  → last session where doctor=request.user
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        utype = getattr(request.user, "user_type", "")
+        if utype == "patient":
+            obj = (Calendar.objects
+                   .filter(patient=request.user)
+                   .order_by("-date")
+                   .first())
+        else:
+            obj = (Calendar.objects
+                   .filter(doctor=request.user)
+                   .order_by("-date")
+                   .first())
+
+        if not obj:
+            return Response({"detail": "No sessions found."}, status=404)
+
+        data = LatestSessionSerializer(obj).data
+        return Response(data, status=200)
+    
+class PreviousSessionView(APIView):
+    permission_classes = [DRFIsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.user_type != "patient":
+            return Response({"error": "Only patients can access previous session"}, status=403)
+
+        # All sessions of this patient ordered by date
+        sessions = Calendar.objects.filter(patient=user).order_by("date")
+
+        if sessions.count() < 2:
+            return Response({"error": "No previous session found"}, status=404)
+
+        # Second-to-last one = previous session
+        prev_session = sessions[sessions.count() - 2]
+        return Response(LatestSessionSerializer(prev_session).data)
