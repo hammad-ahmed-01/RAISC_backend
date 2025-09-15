@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Avg, Count
+from rest_framework.permissions import IsAuthenticated as DRFIsAuthenticated
 
 from users.models import User, Calendar
 from patients.models import PatientProfile, ChatbotProfile
@@ -379,3 +380,21 @@ class RescheduleDoctorSessionView(APIView):
         session.save()
 
         return Response({"message": "Session rescheduled successfully.", "session_id": session.id}, status=200)
+
+class DeleteDoctorSessionView(APIView):
+    """
+    DELETE an existing session owned by the authenticated doctor.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, session_id):
+        session = get_object_or_404(Calendar, id=session_id)
+
+        # ensure the session belongs to this doctor
+        if session.doctor != request.user:
+            return Response({"error": "You are not authorized to delete this session."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        session.delete()
+        return Response({"message": "Session deleted successfully."}, status=status.HTTP_200_OK)
