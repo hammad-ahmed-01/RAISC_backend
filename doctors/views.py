@@ -1,3 +1,4 @@
+from urllib import request as urllib_request
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, generics, status
 from rest_framework.authentication import TokenAuthentication
@@ -23,6 +24,7 @@ from .serializers import (
     DoctorRatingSerializer,
     LatestSessionSerializer,  # NEW
 )
+
 
 # -------------------------
 # Doctor dashboard landing
@@ -51,6 +53,7 @@ class DoctorLandingPageView(APIView):
                 "message": "Welcome to your doctor dashboard.",
             }
         )
+
 
 # -------------------------
 # Doctor's calendar entries
@@ -105,11 +108,18 @@ class ListDoctorsView(generics.ListAPIView):
     serializer_class = DoctorProfileSerializer
     pagination_class = None
 
+
 # -------------------------
-# Patient ↔ Doctor requests (UPDATED)
+# Patient ↔ Doctor requests
 # -------------------------
 
 class RequestDoctorView(APIView):
+    """
+    POST /users/doctor/request/<doctor_id>/
+    Creates a PENDING request for the authenticated patient to the specified doctor.
+    doctor_id is Doctor.pk
+    """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, doctor_id):
@@ -117,24 +127,65 @@ class RequestDoctorView(APIView):
         if getattr(patient, "user_type", "") != "patient":
             return Response({"error": "Only patients can request a doctor."}, status=403)
 
-        # doctor_id is Doctor.pk -> resolve to User
+        # Resolve Doctor.pk -> doctor User
         doc_obj = get_object_or_404(Doctor, id=doctor_id)
         doctor_user = doc_obj.user
 
-        # Block duplicates if there's already an active request
+        # Block duplicates if there's already an active request (pending/approved)
         if DoctorRequest.objects.filter(
             patient=patient,
             doctor=doctor_user,
-            status__in=["pending", "approved"],  # matches your current choices
+            status__in=["pending", "approved"],
         ).exists():
             return Response({"error": "You have already requested this doctor."}, status=400)
 
         dr = DoctorRequest.objects.create(patient=patient, doctor=doctor_user, status="pending")
-        from .serializers import DoctorRequestPostSerializer
         return Response(DoctorRequestPostSerializer(dr).data, status=201)
 
 
+class CancelDoctorRequestView(APIView):
+    """
+    POST /users/doctor/request/<doctor_id>/cancel/
+    POST /users/doctor/request/cancel/<doctor_id>/
+    DELETE /users/doctor/request/<doctor_id>/
+
+    Authenticated PATIENT cancels their pending request to this doctor.
+    We mark it as 'rejected' (audit-friendly), which your frontend treats as "not pending".
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _cancel(self, request, doctor_id):
+        patient = request.user
+        if getattr(patient, "user_type", "") != "patient":
+            return Response({"error": "Only patients can cancel requests."}, status=403)
+
+        doc_obj = get_object_or_404(Doctor, id=doctor_id)
+        doctor_user = doc_obj.user
+
+        try:
+            dr = DoctorRequest.objects.get(patient=patient, doctor=doctor_user, status="pending")
+        except DoctorRequest.DoesNotExist:
+            # If there's no pending record, return 200 so UI can idempotently clean up
+            return Response({"message": "No pending request to cancel."}, status=200)
+
+        dr.status = "rejected"  # mark as rejected (canceled by patient)
+        dr.save(update_fields=["status"])
+        return Response({"message": "Request canceled."}, status=200)
+
+    def post(self, request, doctor_id):
+        return self._cancel(request, doctor_id)
+
+    def delete(self, request, doctor_id):
+        return self._cancel(request, doctor_id)
+
+
 class CheckDoctorRequestView(APIView):
+    """
+    GET /users/doctor/check-request/<doctor_id>/
+    Authenticated PATIENT checks if a request exists (any status).
+    """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, doctor_id):
@@ -142,23 +193,38 @@ class CheckDoctorRequestView(APIView):
         if getattr(patient, "user_type", "") != "patient":
             return Response({"error": "Only patients can check requests."}, status=403)
 
-        # doctor_id is Doctor.pk -> resolve to User
         doc_obj = get_object_or_404(Doctor, id=doctor_id)
         doctor_user = doc_obj.user
 
         exists = DoctorRequest.objects.filter(patient=patient, doctor=doctor_user).exists()
         return Response({"requested": exists}, status=200)
 
-class ListDoctorRequestsView(generics.ListAPIView):
+
+class PatientRequestsView(generics.ListAPIView):
     """
-    GET /users/doctor/requests/
-    Lists PENDING requests for the authenticated doctor (User).
+    GET /users/doctor/patient/requests/
+    Lists ALL requests (any status) for the authenticated PATIENT.
     """
-    serializer_class = DoctorRequestSerializer
+    authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DoctorRequestSerializer
 
     def get_queryset(self):
-        # doctor is a User on the DoctorRequest model in your code
+        return (DoctorRequest.objects
+                .filter(patient=self.request.user)
+                .order_by("-requested_at"))
+
+
+class DoctorPendingRequestsView(generics.ListAPIView):
+    """
+    GET /users/doctor/requests/
+    Lists PENDING requests for the authenticated DOCTOR (User).
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DoctorRequestSerializer
+
+    def get_queryset(self):
         return (DoctorRequest.objects
                 .filter(doctor=self.request.user, status="pending")
                 .order_by("-requested_at"))
@@ -168,44 +234,55 @@ class ManageDoctorRequestView(generics.UpdateAPIView):
     """
     PATCH /users/doctor/manage-request/<pk>/
     Body: { "status": "accepted" | "request_again" }
-    - accepted -> associate patient with this doctor (User)
-    - request_again -> no association, just flip status
+
+    - accepted      -> saved as "approved" in the model, and associates patient with this doctor
+    - request_again -> saved as "rejected" in the model (no association)
     """
-    serializer_class = DoctorRequestSerializer
+    authentication_classes = [TokenAuthentication]  # <-- ensure DRF reads Authorization
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DoctorRequestSerializer
 
     def get_queryset(self):
+        # Only allow the authenticated doctor (User) to manage their incoming requests
         return DoctorRequest.objects.filter(doctor=self.request.user)
 
     def patch(self, request, *args, **kwargs):
         doctor_request = self.get_object()
-        new_status = (request.data.get("status") or "").lower()
 
-        if new_status not in {"accepted", "request_again"}:
-            return Response({"error": "Invalid status. Use 'accepted' or 'request_again'."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        incoming = (request.data.get("status") or "").lower()
+        if incoming not in {"accepted", "request_again"}:
+            return Response(
+                {"error": "Invalid status. Use 'accepted' or 'request_again'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Apply status change
-        doctor_request.status = new_status
+        # Map external API values -> model choices
+        mapped_status = "approved" if incoming == "accepted" else "rejected"
+
+        # Persist status
+        doctor_request.status = mapped_status
         doctor_request.save(update_fields=["status"])
 
-        if new_status == "accepted":
-            # Associate patient with this doctor (User)
+        # On approve: associate patient with this doctor (User)
+        if mapped_status == "approved":
             try:
                 pp = PatientProfile.objects.get(user=doctor_request.patient)
             except PatientProfile.DoesNotExist:
-                return Response({"error": "Patient profile not found."},
-                                status=status.HTTP_404_NOT_FOUND)
-
-            pp.associated_psychologist = doctor_request.doctor  # doctor is a User in your code
-            # Optional: bump level if you want
-            pp.level = max(2, pp.level or 0)
+                return Response(
+                    {"error": "Patient profile not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            pp.associated_psychologist = doctor_request.doctor  # doctor is a User
+            pp.level = max(2, pp.level or 0)  # optional bump
             pp.save(update_fields=["associated_psychologist", "level"])
 
-        # When request_again -> nothing else (patient can re-request later)
-        return Response({"message": f"Request {new_status} successfully"}, status=status.HTTP_200_OK)
+        # Return the updated request using your serializer
+        serializer = self.get_serializer(doctor_request)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 
 
+    
 # -------------------------
 # Doctor's patients list
 # -------------------------
@@ -304,7 +381,7 @@ class DoctorMeProfileView(APIView):
 
 
 # -------------------------
-# NEW: Rate a doctor (by Doctor.id)
+# Rate a doctor (by Doctor.id)
 # -------------------------
 
 class DoctorRateView(APIView):
@@ -350,9 +427,12 @@ class DoctorRateView(APIView):
         doc.save(update_fields=["professional_information"])
 
         return Response({"doctor_id": doc.id, "average": round(avg, 1), "count": cnt}, status=status.HTTP_200_OK)
-    
-    # Reschedule session
-    # doctors/views.py
+
+
+# -------------------------
+# Reschedule / Delete session
+# -------------------------
+
 class RescheduleDoctorSessionView(APIView):
     """
     Allows doctor to update/reschedule an existing session.
@@ -366,7 +446,6 @@ class RescheduleDoctorSessionView(APIView):
         description = data.get("description", "").strip()
         date = data.get("date")
 
-        # Validate
         if not (title and date):
             return Response({"error": "Missing required fields."}, status=400)
 
@@ -383,6 +462,7 @@ class RescheduleDoctorSessionView(APIView):
 
         return Response({"message": "Session rescheduled successfully.", "session_id": session.id}, status=200)
 
+
 class DeleteDoctorSessionView(APIView):
     """
     DELETE an existing session owned by the authenticated doctor.
@@ -393,16 +473,16 @@ class DeleteDoctorSessionView(APIView):
     def delete(self, request, session_id):
         session = get_object_or_404(Calendar, id=session_id)
 
-        # ensure the session belongs to this doctor
         if session.doctor != request.user:
             return Response({"error": "You are not authorized to delete this session."},
                             status=status.HTTP_403_FORBIDDEN)
 
         session.delete()
         return Response({"message": "Session deleted successfully."}, status=status.HTTP_200_OK)
-    
+
+
 # -------------------------
-# NEW: Current Psychologist endpoint
+# Current Psychologist
 # -------------------------
 
 class CurrentPsychologistView(APIView):
@@ -446,7 +526,7 @@ class CurrentPsychologistView(APIView):
 
 
 # -------------------------
-# NEW: Latest session endpoint
+# Latest / Previous session
 # -------------------------
 
 class LatestSessionView(APIView):
@@ -476,7 +556,8 @@ class LatestSessionView(APIView):
 
         data = LatestSessionSerializer(obj).data
         return Response(data, status=200)
-    
+
+
 class PreviousSessionView(APIView):
     permission_classes = [DRFIsAuthenticated]
 
@@ -485,12 +566,10 @@ class PreviousSessionView(APIView):
         if user.user_type != "patient":
             return Response({"error": "Only patients can access previous session"}, status=403)
 
-        # All sessions of this patient ordered by date
         sessions = Calendar.objects.filter(patient=user).order_by("date")
 
         if sessions.count() < 2:
             return Response({"error": "No previous session found"}, status=404)
 
-        # Second-to-last one = previous session
         prev_session = sessions[sessions.count() - 2]
         return Response(LatestSessionSerializer(prev_session).data)

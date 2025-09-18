@@ -1,13 +1,43 @@
 from django.urls import path
 from users.views import ChangeEmailView, ChangePasswordView
-from .views import CurrentPsychologistView, DeleteDoctorSessionView, DoctorMeProfileView, DoctorRateView, LatestSessionView, PreviousSessionView, RescheduleDoctorSessionView, UpdateDoctorSummaryView, DoctorLandingPageView, DoctorSessionsView, ListDoctorsView, RequestDoctorView, CheckDoctorRequestView, ListDoctorRequestsView, ManageDoctorRequestView, DoctorPatientsView, ChatbotProfileListView, ImportantMessagesView, CreateDoctorSessionView
+from .views import (
+    CurrentPsychologistView,
+    DeleteDoctorSessionView,
+    DoctorMeProfileView,
+    DoctorRateView,
+    LatestSessionView,
+    PreviousSessionView,
+    RescheduleDoctorSessionView,
+    UpdateDoctorSummaryView,
+    DoctorLandingPageView,
+    DoctorSessionsView,
+    ListDoctorsView,
+    RequestDoctorView,
+    CheckDoctorRequestView,
+    DoctorPendingRequestsView,     # NEW (doctor sees pending)
+    PatientRequestsView,           # NEW (patient sees all statuses)
+    ManageDoctorRequestView,
+    CancelDoctorRequestView,       # NEW (patient cancels)
+    DoctorPatientsView,
+    ChatbotProfileListView,
+    ImportantMessagesView,
+    CreateDoctorSessionView,
+)
 
 urlpatterns = [
     path('dashboard/', DoctorLandingPageView.as_view(), name='doctor-dashboard'),
 
     # doctor ⇄ patient requests
-    path("requests/", ListDoctorRequestsView.as_view(), name="doctor-requests"),
-    path("manage-request/<int:pk>/", ManageDoctorRequestView.as_view(), name="manage-request"),
+    path("requests/", DoctorPendingRequestsView.as_view(), name="doctor-requests"),               # doctor (pending only)
+    path("patient/requests/", PatientRequestsView.as_view(), name="patient-requests"),            # patient (all)
+    path("manage-request/<int:pk>/", ManageDoctorRequestView.as_view(), name="manage-request"),    # doctor PATCH approve/reject
+    # patient create/check/cancel
+    path("request/<int:doctor_id>/", RequestDoctorView.as_view(), name="request-doctor"),
+    path("check-request/<int:doctor_id>/", CheckDoctorRequestView.as_view(), name="check-doctor-request"),
+    path("request/<int:doctor_id>/cancel/", CancelDoctorRequestView.as_view(), name="cancel-doctor-request"),     # supports POST
+    path("request/cancel/<int:doctor_id>/", CancelDoctorRequestView.as_view(), name="cancel-doctor-request-alt"), # supports POST
+    # also support DELETE /request/<doctor_id>/
+    # (handled in the same view)
 
     # sessions
     path("sessions/", DoctorSessionsView.as_view(), name="doctor-sessions"),
@@ -19,8 +49,6 @@ urlpatterns = [
 
     # doctor discovery
     path("list/", ListDoctorsView.as_view(), name="list-doctors"),
-    path("request/<int:doctor_id>/", RequestDoctorView.as_view(), name="request-doctor"),
-    path("check-request/<int:doctor_id>/", CheckDoctorRequestView.as_view(), name="check-doctor-request"),
 
     # doctor’s patients & chatbot data
     path("patients/", DoctorPatientsView.as_view(), name="doctor-patients"),

@@ -1,9 +1,9 @@
-# doctors/serializers.py
 from rest_framework import serializers
 
 from .models import Doctor, DoctorRequest, DoctorRating
 from patients.models import PatientProfile, ChatbotProfile
 from users.models import Calendar
+
 
 # ----------------------------
 # Doctor list / profile shapes
@@ -58,11 +58,12 @@ class DoctorRequestPostSerializer(serializers.ModelSerializer):
 
 class DoctorRequestSerializer(serializers.ModelSerializer):
     patient = serializers.SerializerMethodField()
+    doctor = serializers.SerializerMethodField()
     requested_at = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S")
 
     class Meta:
         model = DoctorRequest
-        fields = ["id", "patient", "status", "requested_at"]
+        fields = ["id", "patient", "doctor", "status", "requested_at"]
 
     def get_patient(self, obj):
         try:
@@ -81,6 +82,22 @@ class DoctorRequestSerializer(serializers.ModelSerializer):
                 "profile_data": {},
             }
 
+    def get_doctor(self, obj):
+        try:
+            doc = Doctor.objects.get(user=obj.doctor)
+            return {
+                "id": doc.id,
+                "user_id": obj.doctor.id,
+                "username": obj.doctor.username,
+                "email": obj.doctor.email,
+            }
+        except Doctor.DoesNotExist:
+            return {
+                "id": None,
+                "user_id": obj.doctor.id,
+                "username": obj.doctor.username,
+                "email": obj.doctor.email,
+            }
 
 # ----------------------------------------
 # Calendar sessions shown to the doctor
@@ -204,8 +221,9 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
 
 
 # ----------------------
-# NEW — rating serializer
+# Rating serializer
 # ----------------------
+
 class DoctorRatingSerializer(serializers.ModelSerializer):
     class Meta:
         model = DoctorRating
@@ -215,9 +233,11 @@ class DoctorRatingSerializer(serializers.ModelSerializer):
             "comment": {"required": False, "allow_blank": True},
         }
 
+
 # ----------------------
-# NEW — current psychologist for patient / self for doctor
+# Current Psychologist
 # ----------------------
+
 class CurrentPsychologistSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
 
@@ -236,8 +256,9 @@ class CurrentPsychologistSerializer(serializers.ModelSerializer):
 
 
 # ----------------------
-# NEW — latest session serializer (patient/doctor)
+# Latest session serializer
 # ----------------------
+
 class LatestSessionSerializer(serializers.ModelSerializer):
     session_number = serializers.SerializerMethodField()
     summary = serializers.SerializerMethodField()
