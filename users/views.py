@@ -138,6 +138,13 @@ class MeProfileUpdateView(views.APIView):
         "condition", "emergency_contact", "therapyFocus"
     }
 
+    @staticmethod
+    def _iso(dt):
+        try:
+            return dt.isoformat() if dt else None
+        except Exception:
+            return None
+
     def _flatten_doctor(self, user, doc):
         pi = dict(doc.professional_information or {})
         return {
@@ -157,6 +164,9 @@ class MeProfileUpdateView(views.APIView):
             "description": pi.get("description", ""),
             "rates": str(doc.rates) if doc.rates is not None else "",
             "user_type": "doctor",
+            # added
+            "member_since": self._iso(getattr(user, "date_joined", None)),
+            "last_login": self._iso(getattr(user, "last_login", None)),
         }
 
     def _flatten_patient(self, user, profile):
@@ -173,6 +183,9 @@ class MeProfileUpdateView(views.APIView):
             "therapyFocus": pd.get("therapyFocus", ""),
             "bio": pd.get("bio", ""),
             "user_type": "patient",
+            # added
+            "member_since": self._iso(getattr(user, "date_joined", None)),
+            "last_login": self._iso(getattr(user, "last_login", None)),
         }
 
     def get(self, request):
@@ -190,7 +203,14 @@ class MeProfileUpdateView(views.APIView):
             profile, _ = PatientProfile.objects.get_or_create(user=user)
             return Response(self._flatten_patient(user, profile), status=200)
 
-        return Response({"username": user.username, "email": user.email, "user_type": role}, status=200)
+        # fallback for other roles; include normalized dates
+        return Response({
+            "username": user.username,
+            "email": user.email,
+            "user_type": role,
+            "member_since": self._iso(getattr(user, "date_joined", None)),
+            "last_login": self._iso(getattr(user, "last_login", None)),
+        }, status=200)
 
     def patch(self, request):
         user = request.user
@@ -245,7 +265,12 @@ class MeProfileUpdateView(views.APIView):
             profile.save(update_fields=["profile_data"])
             return Response(self._flatten_patient(user, profile), status=200)
 
-        return Response({"username": user.username, "email": user.email}, status=200)
+        return Response({
+            "username": user.username,
+            "email": user.email,
+            "member_since": self._iso(getattr(user, "date_joined", None)),
+            "last_login": self._iso(getattr(user, "last_login", None)),
+        }, status=200)
 
 
 # ---------------------------

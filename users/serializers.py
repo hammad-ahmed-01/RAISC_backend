@@ -5,6 +5,32 @@ from .models import User, Calendar
 from patients.models import PatientProfile
 from doctors.models import Doctor
 
+def _user_payload(u: User):
+    # display_name derived from first/last if available, else username
+    first = (getattr(u, "first_name", "") or "").strip()
+    last = (getattr(u, "last_name", "") or "").strip()
+    full = f"{first} {last}".strip()
+    display_name = full or getattr(u, "get_full_name", lambda: "")() or u.username
+
+    # Optional phone on User; getattr avoids schema changes
+    phone = getattr(u, "phone", None)
+
+    return {
+        "id": u.id,
+        "username": u.username,
+        "email": u.email,
+        "user_type": getattr(u, "user_type", ""),
+        # expose both ISO strings:
+        "date_joined": u.date_joined.isoformat() if getattr(u, "date_joined", None) else None,
+        "member_since": u.date_joined.isoformat() if getattr(u, "date_joined", None) else None,
+        "last_login": u.last_login.isoformat() if getattr(u, "last_login", None) else None,
+        "display_name": display_name,
+        "phone": phone,
+        # (optionally include email verification flags if you track them)
+        # "email_verified": getattr(u, "email_verified", None),
+        # "is_email_verified": getattr(u, "is_email_verified", None),
+    }
+
 
 # -----------------------
 # Embedded profile shapes
@@ -77,10 +103,17 @@ class UserSerializer(serializers.ModelSerializer):
     patient_profile = serializers.SerializerMethodField()
     doctor_profile = serializers.SerializerMethodField()
 
+    # NEW: include these at the top-level so the frontend can show dates
+    date_joined = serializers.DateTimeField(read_only=True)
+    last_login = serializers.DateTimeField(read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "username", "email", "user_type",
-                  "patient_profile", "doctor_profile"]
+        fields = [
+            "id", "username", "email", "user_type",
+            "date_joined", "last_login",
+            "patient_profile", "doctor_profile",
+        ]
 
     def get_patient_profile(self, obj):
         if obj.user_type == "patient":
@@ -115,7 +148,6 @@ class UserSerializer(serializers.ModelSerializer):
             )
 
         return instance
-
 
 # -------------------------------------------------------
 # Simple Registration (used by /users/new-register/)

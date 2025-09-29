@@ -1,3 +1,4 @@
+from users.serializers import _user_payload
 from rest_framework import serializers
 
 from .models import Doctor, DoctorRequest, DoctorRating
@@ -9,12 +10,22 @@ from users.models import Calendar
 # Doctor list / profile shapes
 # ----------------------------
 
+
 class DoctorProfileSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
+    # NEW: real-time count of assigned patients
+    patients_assigned = serializers.SerializerMethodField()
 
     class Meta:
         model = Doctor
-        fields = ["id", "user", "professional_information", "chatgroup_nickname", "rates"]
+        fields = [
+            "id",
+            "user",
+            "professional_information",
+            "chatgroup_nickname",
+            "rates",
+            "patients_assigned",  # NEW
+        ]
 
     def get_user(self, obj):
         u = obj.user
@@ -23,7 +34,14 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             "username": u.username,
             "email": u.email,
             "user_type": getattr(u, "user_type", ""),
+            # pass through join/login for convenience if you want (optional)
+            "date_joined": getattr(u, "date_joined", None),
+            "last_login": getattr(u, "last_login", None),
         }
+
+    def get_patients_assigned(self, obj):
+        # Count of patients whose associated_psychologist is this doctor's user
+        return PatientProfile.objects.filter(associated_psychologist=obj.user).count()
 
 
 class DoctorLimitedSerializer(serializers.ModelSerializer):
