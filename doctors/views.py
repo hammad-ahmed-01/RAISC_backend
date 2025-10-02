@@ -389,44 +389,59 @@ class DoctorRateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, doctor_id):
+        # Only patients can rate
         if getattr(request.user, "user_type", "") != "patient":
-            return Response({"detail": "Only patients can submit ratings."},
-                            status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "Only patients can submit ratings."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-        # accept either "rating" or "stars"
-        raw = request.data.get("rating", request.data.get("stars", 0))
+        # Accept either "rating" or "stars"
+        raw = request.data.get("rating", request.data.get("stars"))
         try:
             stars = int(raw)
         except (TypeError, ValueError):
-            stars = 0
+            return Response(
+                {"detail": "rating must be an integer between 1 and 5"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if stars < 1 or stars > 5:
             return Response({"detail": "rating must be between 1 and 5"},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        comment = (request.data.get("comment") or "").strip()
+        comment = (request.data.get("comment") or "").strip() or None
         doc = get_object_or_404(Doctor, id=doctor_id)
 
+        # Upsert the single rating for this (patient, doctor)
         obj, created = DoctorRating.objects.get_or_create(
-            doctor=doc, patient=request.user,
-            defaults={"stars": stars, "comment": comment or None}
+            doctor=doc,
+            patient=request.user,
+            defaults={"stars": stars, "comment": comment},
         )
         if not created:
-            obj.stars = stars
-            if comment:
+            changed = False
+            if obj.stars != stars:
+                obj.stars = stars
+                changed = True
+            if comment is not None and comment != (obj.comment or None):
                 obj.comment = comment
-            obj.save()
+                changed = True
+            if changed:
+                obj.save(update_fields=["stars", "comment"] if comment is not None else ["stars"])
 
+        # Always recompute from DB (truth) and persist to doctor's profile
         agg = DoctorRating.objects.filter(doctor=doc).aggregate(avg=Avg("stars"), cnt=Count("id"))
         avg = float(agg["avg"] or 0.0)
         cnt = int(agg["cnt"] or 0)
 
         pi = dict(doc.professional_information or {})
         pi["rating"] = round(avg, 1)
+        pi["ratings_count"] = cnt
         doc.professional_information = pi
         doc.save(update_fields=["professional_information"])
 
-        return Response({"doctor_id": doc.id, "average": round(avg, 1), "count": cnt}, status=status.HTTP_200_OK)
+        return Response({"doctor_id": doc.id, "average": pi["rating"], "count": cnt}, status=status.HTTP_200_OK)
 
 
 # -------------------------
