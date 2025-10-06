@@ -225,6 +225,7 @@ class PatientMeProfileView(APIView):
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
             "therapyFocus": pd.get("therapyFocus", ""),
+            "chatgroup_nickname": pd.get("chatgroup_nickname", ""),  # ← added so patient GET includes it
             "bio": pd.get("bio", ""),
         }
         return Response(data, status=status.HTTP_200_OK)

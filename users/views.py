@@ -130,12 +130,12 @@ class MeProfileUpdateView(views.APIView):
     DOCTOR_KEYS = {
         "specialization", "experience", "qualifications", "display_name", "phone",
         "location", "organization", "education", "profile_image", "expertise", "rating",
-        "description",
+        "description", "chatgroup_nickname",
     }
 
     PATIENT_KEYS = {
         "display_name", "phone", "bio", "location", "age",
-        "condition", "emergency_contact", "therapyFocus"
+        "condition", "emergency_contact", "therapyFocus", "chatgroup_nickname",
     }
 
     @staticmethod
@@ -162,6 +162,7 @@ class MeProfileUpdateView(views.APIView):
             "expertise": pi.get("expertise", []),
             "rating": pi.get("rating", 0),
             "description": pi.get("description", ""),
+            "chatgroup_nickname": pi.get("chatgroup_nickname", ""),
             "rates": str(doc.rates) if doc.rates is not None else "",
             "user_type": "doctor",
             # added
@@ -181,6 +182,7 @@ class MeProfileUpdateView(views.APIView):
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
             "therapyFocus": pd.get("therapyFocus", ""),
+            "chatgroup_nickname": pd.get("chatgroup_nickname", ""),
             "bio": pd.get("bio", ""),
             "user_type": "patient",
             # added
@@ -392,10 +394,6 @@ class ChangeEmailView(views.APIView):
         if current_email == new_email:
             return Response({"error": "New email must be different from current email."},
                             status=status.HTTP_400_BAD_REQUEST)
-
-        # (Optional) uniqueness check
-        # if User.objects.filter(email=new_email).exclude(id=user.id).exists():
-        #     return Response({"error": "Email already in use."}, status=status.HTTP_400_BAD_REQUEST)
 
         user.email = new_email
         user.save(update_fields=["email"])
