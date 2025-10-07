@@ -127,15 +127,18 @@ class MeProfileUpdateView(views.APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
+    # NOTE: "chatgroup_nickname" stays OUTSIDE doctor JSON
     DOCTOR_KEYS = {
         "specialization", "experience", "qualifications", "display_name", "phone",
         "location", "organization", "education", "profile_image", "expertise", "rating",
-        "description", "chatgroup_nickname",
+        "description",
     }
 
+    # Added "gender" here
     PATIENT_KEYS = {
-        "display_name", "phone", "bio", "location", "age",
-        "condition", "emergency_contact", "therapyFocus", "chatgroup_nickname",
+        "display_name", "phone", "bio", "location", "age", "gender",
+        "condition", "emergency_contact", "therapyFocus",
+        "chatgroup_nickname",
     }
 
     @staticmethod
@@ -162,10 +165,9 @@ class MeProfileUpdateView(views.APIView):
             "expertise": pi.get("expertise", []),
             "rating": pi.get("rating", 0),
             "description": pi.get("description", ""),
-            "chatgroup_nickname": pi.get("chatgroup_nickname", ""),
+            "chatgroup_nickname": doc.chatgroup_nickname or "",
             "rates": str(doc.rates) if doc.rates is not None else "",
             "user_type": "doctor",
-            # added
             "member_since": self._iso(getattr(user, "date_joined", None)),
             "last_login": self._iso(getattr(user, "last_login", None)),
         }
@@ -177,7 +179,11 @@ class MeProfileUpdateView(views.APIView):
             "display_name": pd.get("display_name", (f"{user.first_name} {user.last_name}".strip() or user.username)),
             "email": user.email,
             "phone": pd.get("phone", ""),
+
+            # expose age + gender from JSON
             "age": pd.get("age", ""),
+            "gender": pd.get("gender", ""),
+
             "condition": pd.get("condition", ""),
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
@@ -185,7 +191,6 @@ class MeProfileUpdateView(views.APIView):
             "chatgroup_nickname": pd.get("chatgroup_nickname", ""),
             "bio": pd.get("bio", ""),
             "user_type": "patient",
-            # added
             "member_since": self._iso(getattr(user, "date_joined", None)),
             "last_login": self._iso(getattr(user, "last_login", None)),
         }
@@ -205,7 +210,7 @@ class MeProfileUpdateView(views.APIView):
             profile, _ = PatientProfile.objects.get_or_create(user=user)
             return Response(self._flatten_patient(user, profile), status=200)
 
-        # fallback for other roles; include normalized dates
+        # fallback for other roles
         return Response({
             "username": user.username,
             "email": user.email,
@@ -218,6 +223,7 @@ class MeProfileUpdateView(views.APIView):
         user = request.user
         data = dict(request.data or {})
 
+        # allow email/username changes
         if "email" in data:
             email = (data.get("email") or "").strip().lower()
             if email and email != user.email:
@@ -240,21 +246,31 @@ class MeProfileUpdateView(views.APIView):
             except Doctor.DoesNotExist:
                 return Response({"error": "Doctor profile not found."}, status=404)
 
+            # Merge allowed keys into JSON
             prof = dict(doc.professional_information or {})
             for k, v in data.items():
                 if k in self.DOCTOR_KEYS:
                     prof[k] = v
             doc.professional_information = prof
 
+            update_fields = ["professional_information"]
+
+            # Dedicated column
+            if "chatgroup_nickname" in data:
+                doc.chatgroup_nickname = (data.get("chatgroup_nickname") or "").strip()
+                update_fields.append("chatgroup_nickname")
+
+            # Decimal field
             if "rates" in data:
                 raw = str(data.get("rates", "")).strip()
                 try:
                     if raw != "":
                         doc.rates = Decimal(raw)
+                        update_fields.append("rates")
                 except (InvalidOperation, TypeError, ValueError):
                     return Response({"error": "Invalid rates value."}, status=status.HTTP_400_BAD_REQUEST)
 
-            doc.save(update_fields=["professional_information", "rates"])
+            doc.save(update_fields=list(set(update_fields)))
             return Response(self._flatten_doctor(user, doc), status=200)
 
         elif role == "patient":
@@ -276,7 +292,7 @@ class MeProfileUpdateView(views.APIView):
 
 
 # ---------------------------
-# Account Deletion (role-aware, avoids legacy tables)
+# Account Deletion (role-aware)
 # ---------------------------
 
 try:
@@ -300,7 +316,6 @@ class DeleteAccountView(views.APIView):
             user = request.user
             role = getattr(user, "user_type", "")
 
-            # Optional JWT blacklist (ignored if not used)
             if SIMPLEJWT:
                 refresh = request.data.get("refresh") or request.data.get("refresh_token")
                 if refresh:
@@ -311,7 +326,6 @@ class DeleteAccountView(views.APIView):
                         pass
 
             if role == "patient":
-                # Clean Calendars and PatientProfile (safe, ours)
                 try:
                     Calendar.objects.filter(patient=user).delete()
                 except Exception as e:
@@ -323,7 +337,6 @@ class DeleteAccountView(views.APIView):
                     log.warning("Delete patient profile failed: %s", e)
 
             elif role == "doctor":
-                # Unassign this doctor from patients, clean calendars and doctor profile
                 try:
                     PatientProfile.objects.filter(associated_psychologist=user).update(associated_psychologist=None)
                 except Exception as e:
@@ -339,7 +352,6 @@ class DeleteAccountView(views.APIView):
                 except Exception as e:
                     log.warning("Delete doctor profile failed: %s", e)
 
-            # Finally delete user
             user.delete()
             return Response({"detail": "Account deleted."}, status=status.HTTP_200_OK)
 

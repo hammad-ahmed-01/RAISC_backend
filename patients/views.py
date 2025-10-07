@@ -20,7 +20,7 @@ class PatientLandingPageView(APIView):
 
     def get(self, request):
         user = request.user
-        patient_profile = user.patient_profile  # Access the related patient profile
+        patient_profile = user.patient_profile
         profile_data = PatientProfileSerializer(patient_profile).data
         user_data = UserSerializer(user).data
         data = {
@@ -41,7 +41,7 @@ class CalendarListView(generics.ListAPIView):
         return CalendarPatientSerializer
 
 
-User = get_user_model()  # Use the custom User model
+User = get_user_model()
 
 class UserProfileView(APIView):
     """
@@ -49,9 +49,6 @@ class UserProfileView(APIView):
     """
 
     def get_user_by_token(self, token_key):
-        """
-        Fetch the user associated with the given token key.
-        """
         try:
             token = Token.objects.get(key=token_key)
             return token.user
@@ -59,14 +56,10 @@ class UserProfileView(APIView):
             return None
 
     def get(self, request, chatbot_session_id):
-        """
-        Fetch the user profile data for the given chatbot_session_id.
-        """
         user = self.get_user_by_token(chatbot_session_id)
         if not user:
             return Response({"error": "User not found or invalid token."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure the user is a patient
         if not hasattr(user, 'patient_profile'):
             return Response({"error": "Access denied. Only patients can retrieve profile data."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -79,52 +72,42 @@ class UserProfileView(APIView):
 
     def post(self, request, chatbot_session_id):
         """
-        Store or update the user profile data for the given chatbot_session_id.
-        Also saves the latest chatbot session summary into ChatbotProfile without duplication.
+        Store/merge incoming profile_data and (optionally) save latest chatbot summary.
         """
-        print("Incoming request data:", request.data)  # Debugging statement
         user = self.get_user_by_token(chatbot_session_id)
         if not user:
             return Response({"error": "User not found or invalid token."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure the user is a patient
         if not hasattr(user, 'patient_profile'):
             return Response({"error": "Access denied. Only patients can update profile data."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            # Fetch or create the PatientProfile for the user
-            profile, created = PatientProfile.objects.get_or_create(user=user)
+            profile, _ = PatientProfile.objects.get_or_create(user=user)
 
-            # Ensure request.data is a dictionary
             if not isinstance(request.data, dict):
                 return Response({"error": "Invalid data format. Expected a JSON object."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Update the profile_data field
-            profile.profile_data.update(request.data)  # Merge incoming data with existing profile_data
-            
-            # Set patient level to 1 ONLY if it is currently 0
+            # Merge payload into profile_data (now supports age + gender keys too)
+            profile.profile_data.update(request.data)
+
             if profile.level == 0:
                 profile.level = 1
 
             profile.save()
 
-            # Process chatbot past_summaries
+            # Handle optional summaries
             past_summaries = request.data.get("past_summaries", [])
             if past_summaries:
-                latest_summary = past_summaries[-1]  # Get the most recent summary
-                summary_timestamp = parse_datetime(latest_summary["timestamp"])  # Convert timestamp to datetime object
-            
-                # Ensure timestamp is rounded to seconds to avoid precision mismatch
-                summary_timestamp = summary_timestamp.replace(microsecond=0)
-            
-                # Check if a similar session summary already exists for this patient
-                existing_entry = ChatbotProfile.objects.filter(
+                latest_summary = past_summaries[-1]
+                summary_timestamp = parse_datetime(latest_summary["timestamp"]).replace(microsecond=0)
+
+                exists = ChatbotProfile.objects.filter(
                     patient=user, session_summary=latest_summary["summary"]
                 ).exists()
-            
-                if not existing_entry:
+
+                if not exists:
                     try:
-                        _, created = ChatbotProfile.objects.get_or_create(
+                        ChatbotProfile.objects.get_or_create(
                             patient=user,
                             date=summary_timestamp,
                             defaults={
@@ -134,34 +117,22 @@ class UserProfileView(APIView):
                                 "session_end_msg": latest_summary["session_end_msg"],
                             }
                         )
-                        if created:
-                            print(f"New ChatbotProfile created for {user.username} at {summary_timestamp}")
-                        else:
-                            print(f"Duplicate avoided: ChatbotProfile already exists for {user.username} at {summary_timestamp}")
-            
                     except IntegrityError:
-                        print(f"IntegrityError: Avoided duplicate chatbot summary for {user.username} at {summary_timestamp}")
-                else:
-                    print(f"Duplicate session summary detected for {user.username}, skipping entry.")
-            
+                        pass
+
             return Response({"message": "Profile data and chatbot summary saved successfully."}, status=status.HTTP_200_OK)
-            
 
         except Exception as e:
-            print(f"Error updating profile data: {e}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    
 
 class PatientSessionsView(generics.ListAPIView):
     serializer_class = CalendarPatientSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """
-        Fetch therapy sessions for the logged-in patient.
-        """
         return Calendar.objects.filter(patient=self.request.user).order_by("date")
+
 
 class DoctorSummaryView(APIView):
     """
@@ -169,9 +140,6 @@ class DoctorSummaryView(APIView):
     """
 
     def get_user_by_token(self, token_key):
-        """
-        Fetch the user associated with the given token key.
-        """
         try:
             token = Token.objects.get(key=token_key)
             return token.user
@@ -179,23 +147,18 @@ class DoctorSummaryView(APIView):
             return None
 
     def get(self, request, session_token):
-        """
-        Retrieve the latest doctor summary from the most recent calendar entry that contains one.
-        """
         user = self.get_user_by_token(session_token)
         if not user:
             return Response({"error": "Invalid session token or user not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure user is a patient
         if not hasattr(user, 'patient_profile'):
             return Response({"error": "Only patients can retrieve doctor summaries."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Fetch the latest calendar entry where doctor_summary is present
         latest_calendar = (
             Calendar.objects
-            .filter(patient=user, doctor_summary__isnull=False)  # Only calendars with doctor summaries
-            .exclude(doctor_summary="")  # Ignore empty summaries
-            .order_by("-date")  # Get the latest one
+            .filter(patient=user, doctor_summary__isnull=False)
+            .exclude(doctor_summary="")
+            .order_by("-date")
             .first()
         )
 
@@ -212,7 +175,6 @@ class PatientMeProfileView(APIView):
         try:
             pp = PatientProfile.objects.get(user=request.user)
         except PatientProfile.DoesNotExist:
-            # initialize an empty one if desired
             pp = PatientProfile.objects.create(user=request.user, level=0, profile_data={})
 
         pd = dict(pp.profile_data or {})
@@ -220,12 +182,16 @@ class PatientMeProfileView(APIView):
             "display_name": pd.get("display_name", f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username),
             "email": request.user.email,
             "phone": pd.get("phone", ""),
+
+            # Added here:
             "age": pd.get("age", ""),
+            "gender": pd.get("gender", ""),
+
             "condition": pd.get("condition", ""),
             "emergency_contact": pd.get("emergency_contact", ""),
             "location": pd.get("location", ""),
             "therapyFocus": pd.get("therapyFocus", ""),
-            "chatgroup_nickname": pd.get("chatgroup_nickname", ""),  # ← added so patient GET includes it
+            "chatgroup_nickname": pd.get("chatgroup_nickname", ""),
             "bio": pd.get("bio", ""),
         }
         return Response(data, status=status.HTTP_200_OK)
