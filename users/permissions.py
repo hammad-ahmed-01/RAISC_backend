@@ -18,3 +18,7 @@ class IsPatientOrReadOnly(IsAuthenticated):
         if request.method in ['POST', 'PUT', 'PATCH']:
             return is_authenticated and request.user.user_type == 'patient'
         return is_authenticated
+
+class IsOrganizationUser(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.user_type == 'organization'

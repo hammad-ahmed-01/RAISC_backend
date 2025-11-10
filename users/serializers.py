@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.utils.text import slugify
 
+from organization.models import Organization
+
 from .models import User, Calendar
 from patients.models import PatientProfile
 from doctors.models import Doctor
@@ -9,7 +11,11 @@ from doctors.models import Doctor
 # -----------------------
 # Embedded profile shapes
 # -----------------------
-
+class OrganizationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=Organization
+        fields=['id','name','location','details','user_id']
+        
 class PatientProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientProfile
@@ -122,17 +128,17 @@ class UserSerializer(serializers.ModelSerializer):
 # Accepts user_type and doctor_profile in a friendly way
 # -------------------------------------------------------
 
-class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
+class  SimpleUserRegistrationSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(write_only=True)
     password = serializers.CharField(write_only=True, min_length=8)
     user_type = serializers.ChoiceField(
-        choices=[("patient", "Patient"), ("doctor", "Doctor")]
+        choices=[("patient", "Patient"), ("doctor", "Doctor"),("organization", "Organization")]
     )
     doctor_profile = serializers.DictField(required=False)  # raw dict, normalized in create()
-
+    organization_profile = serializers.DictField(required=False)  
     class Meta:
         model = User
-        fields = ("full_name", "email", "password", "user_type", "doctor_profile")
+        fields = ("full_name", "email", "password", "user_type", "doctor_profile", "organization_profile")
 
     def validate_email(self, value):
         value = value.lower().strip()
@@ -194,6 +200,14 @@ class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
 
         if user_type == "patient":
             PatientProfile.objects.create(user=user, level=0, profile_data={})
+        elif user_type == "organization":
+            org_in = validated_data.pop("organization_profile", {}) or {}
+            Organization.objects.create(
+                user=user,
+                name=org_in.get("organization name",""),
+                location=org_in.get("location",""),
+                details=org_in.get("details",{})
+            )
         else:
             # Utilities
             def to_list(v):
@@ -225,7 +239,7 @@ class SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                 chatgroup_nickname="",
                 rates=rates_val,
             )
-
+            
         return user
 
 
