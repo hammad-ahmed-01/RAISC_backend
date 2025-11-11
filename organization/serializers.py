@@ -32,4 +32,4 @@ class OrganizationViewDoctorCalendarSerializer(serializers.ModelSerializer):
     class Meta:
         model=Calendar
         fields=['id', 'title','date','details', 'description', 'doctor_summary', 'patient_update', 'doctor_id', 'patient_id']
-        
+    

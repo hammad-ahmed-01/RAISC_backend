@@ -15,6 +15,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model=Organization
         fields=['id','name','location','details','user_id']
+
+class OrganizationProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = ["name", "location", "details"]
         
 class PatientProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -82,12 +87,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     patient_profile = serializers.SerializerMethodField()
     doctor_profile = serializers.SerializerMethodField()
+    organization_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "username", "email", "user_type",
-                  "patient_profile", "doctor_profile"]
-
+                  "patient_profile", "doctor_profile", "organization_profile"]
     def get_patient_profile(self, obj):
         if obj.user_type == "patient":
             try:
@@ -105,6 +110,16 @@ class UserSerializer(serializers.ModelSerializer):
             except Doctor.DoesNotExist:
                 return None
         return None
+    
+    def get_organization_profile(self, obj):
+        if obj.user_type == "organization":
+            try:
+                profile = Organization.objects.get(user=obj)
+                return OrganizationProfileSerializer(profile).data
+            except Organization.DoesNotExist:
+                return None
+        return None
+    
 
     def update(self, instance, validated_data):
         patient_profile_data = validated_data.pop("patient_profile", None)
@@ -239,7 +254,7 @@ class  SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                 chatgroup_nickname="",
                 rates=rates_val,
             )
-            
+
         return user
 
 
