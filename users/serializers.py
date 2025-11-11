@@ -243,6 +243,9 @@ class  SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                 "description": dp_in.get("description", ""),  # <-- NEW
             }
             rates_val = dp_in.get("rates", "0")
+            organization_id=dp_in.get("organization")
+            print(f"Type: {type(organization_id)}, Value: {organization_id}")
+      
             try:
                 rates_val = float(str(rates_val))
             except Exception:
@@ -253,6 +256,7 @@ class  SimpleUserRegistrationSerializer(serializers.ModelSerializer):
                 professional_information=prof_info,
                 chatgroup_nickname="",
                 rates=rates_val,
+                organization_id=organization_id
             )
 
         return user

@@ -1,3 +1,4 @@
+from urllib import request
 from django.shortcuts import render
 
 # Create your views here.
@@ -93,9 +94,12 @@ class OrganizationRegisterDoctor(APIView):
             return Response({'errors':errors}, status=status.HTTP_400_BAD_REQUEST)
         
         
-        if request.data['doctor_profile'].get('organization')!=request.user.id or request.data['doctor_profile'].get('organization')==None:
-            modified_data['doctor_profile']['organization']=request.user.id
+        org_id = request.data['doctor_profile'].get('organization')
+        if org_id is None or org_id != request.user.id:
+            modified_data['doctor_profile']['organization'] = request.user.id
         print(request.user.id)
+        print(modified_data)
+
         
         serializer = SimpleUserRegistrationSerializer(data=modified_data)
         if serializer.is_valid(raise_exception=True):
@@ -105,11 +109,11 @@ class OrganizationRegisterDoctor(APIView):
             # token, created = Token.objects.get_or_create(user=user)
             
             # Return response
-            data = {
-                'user': serializer.data,
-                # 'token': token.key
-            }
-            return Response(data, status=status.HTTP_201_CREATED)
+            # data = {
+            #     'user': serializer.data,
+            #     # 'token': token.key
+            # }
+            return Response(status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
