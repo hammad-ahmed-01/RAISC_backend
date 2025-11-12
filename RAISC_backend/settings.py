@@ -6,13 +6,13 @@ import dj_database_url
 
 load_dotenv()
 
-# DATABASES = {
-#     'default': dj_database_url.parse(
-#         os.getenv("DATABASE_URL"),
-#         conn_max_age=0,                     # important with transaction pooling
-#         ssl_require= False
-#     )
-# }
+DATABASES = {
+    'default': dj_database_url.parse(
+        os.getenv("DATABASE_URL"),
+        conn_max_age=0,                     # important with transaction pooling
+        ssl_require= False
+    )
+}
 
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,7 +24,13 @@ DEBUG = True  # Set to False in production
 APPEND_SLASH = False
 
 # ALLOWED_HOSTS = ['web-production-deb22.up.railway.app', 'localhost']
-ALLOWED_HOSTS = ['*']  
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    'localhost:3000',
+    '127.0.0.1:3000'
+] 
 
 # Application definition
 INSTALLED_APPS = [
@@ -60,9 +66,7 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000"
-    # "https://stage.raisc.org/",
-    # "https://raisc.org/",
+    "http://localhost:3000",
 ]
 
 ROOT_URLCONF = 'RAISC_backend.urls'
@@ -88,16 +92,16 @@ WSGI_APPLICATION = 'RAISC_backend.wsgi.application'
 ASGI_APPLICATION = 'RAISC_backend.asgi.application'
 
 # Database Configurations
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('POSTGRES_DB', default='RAISC_DB'),
-        'USER': config('POSTGRES_USER', default='postgres'),
-        'PASSWORD': config('POSTGRES_PASSWORD', default='123'),
-        'HOST': config('POSTGRES_HOST', default='localhost'),
-        'PORT': config('POSTGRES_PORT', default='5432'),
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': config('POSTGRES_DB', default='RAISC_DB'),
+#         'USER': config('POSTGRES_USER', default='postgres'),
+#         'PASSWORD': config('POSTGRES_PASSWORD', default='local1234'),
+#         'HOST': config('POSTGRES_HOST', default='localhost'),
+#         'PORT': config('POSTGRES_PORT', default='5432'),
+#     }
+# }
 
 REDIS_HOST = config('REDIS_HOST', default='localhost')
 REDIS_PORT = config('REDIS_PORT', default='6379')
