@@ -24,13 +24,7 @@ DEBUG = True  # Set to False in production
 APPEND_SLASH = False
 
 # ALLOWED_HOSTS = ['web-production-deb22.up.railway.app', 'localhost']
-ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    '0.0.0.0',
-    'localhost:3000',
-    '127.0.0.1:3000'
-] 
+ALLOWED_HOSTS = ['*']  
 
 # Application definition
 INSTALLED_APPS = [
@@ -67,6 +61,8 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "https://stage.raisc.org/",
+    "https://raisc.org/",
 ]
 
 ROOT_URLCONF = 'RAISC_backend.urls'
