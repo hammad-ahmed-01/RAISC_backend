@@ -59,11 +59,13 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://stage.raisc.org/",
-    "https://raisc.org/",
-]
+# CORS_ALLOWED_ORIGINS = [
+    # "http://localhost:3000",
+    # "https://stage.raisc.org/",
+    # "https://raisc.org/",
+#     
+# ]
+CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'RAISC_backend.urls'
 
@@ -84,20 +86,20 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'RAISC_backend.wsgi.application'
-ASGI_APPLICATION = 'RAISC_backend.asgi.application'
+# WSGI_APPLICATION = 'RAISC_backend.wsgi.application'
+# ASGI_APPLICATION = 'RAISC_backend.asgi.application'
 
 # Database Configurations
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': config('POSTGRES_DB', default='RAISC_DB'),
-#         'USER': config('POSTGRES_USER', default='postgres'),
-#         'PASSWORD': config('POSTGRES_PASSWORD', default='local1234'),
-#         'HOST': config('POSTGRES_HOST', default='localhost'),
-#         'PORT': config('POSTGRES_PORT', default='5432'),
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('POSTGRES_DB', default='RAISC_DB'),
+        'USER': config('POSTGRES_USER', default='postgres'),
+        'PASSWORD': config('POSTGRES_PASSWORD', default='123'),
+        'HOST': config('POSTGRES_HOST', default='localhost'),
+        'PORT': config('POSTGRES_PORT', default='5432'),
+    }
+}
 
 REDIS_HOST = config('REDIS_HOST', default='localhost')
 REDIS_PORT = config('REDIS_PORT', default='6379')

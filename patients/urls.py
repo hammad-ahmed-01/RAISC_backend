@@ -1,8 +1,10 @@
 from django.urls import path
 from users.views import ChangeEmailView, ChangePasswordView
-from .views import PatientLandingPageView, CalendarListView, PatientMeProfileView, UserProfileView, PatientSessionsView, DoctorSummaryView
+from .views import PatientLandingPageView, CalendarListView, PatientMeProfileView, UserProfileView, PatientSessionsView, DoctorSummaryView, MoodTodayView, SetMoodView
 
 urlpatterns = [
+    path('mood-today/', MoodTodayView.as_view(), name='mood-today'),
+    path('set-mood/', SetMoodView.as_view(), name='set-mood'),
     path('dashboard/', PatientLandingPageView.as_view(), name='patient-dashboard'),
     path("sessions/", PatientSessionsView.as_view(), name="patient-sessions"),
     path('data/<str:chatbot_session_id>/', UserProfileView.as_view(), name='user-data'),
