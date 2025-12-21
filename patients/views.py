@@ -11,9 +11,115 @@ from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from django.utils.dateparse import parse_datetime
+from django.utils import timezone
 from django.db import IntegrityError
 from django.db.models import Q
 from rest_framework.authentication import TokenAuthentication
+
+# ============================================
+# MOOD OPTIONS CONFIGURATION
+# Developers can modify this list to change the moods returned by the API.
+# The first item in the list will be considered the default mood.
+# ============================================
+MOOD_OPTIONS = [
+    {'value': 'neutral', 'label': 'Neutral', 'is_default': True},
+    {'value': 'sad', 'label': 'Sad', 'is_default': False},
+    {'value': 'happy', 'label': 'Happy', 'is_default': False},
+    {'value': 'anxious', 'label': 'Anxious', 'is_default': False},
+]
+
+
+class MoodTodayView(APIView):
+    """
+    API endpoint that returns a list of mood options for patients.
+    GET /patients/mood-today/
+    
+    Returns:
+        - moods: List of available mood options
+        - default: The default mood value
+    """
+    permission_classes = [IsAuthenticated, IsPatientUser]  # Change to  if authentication is required
+
+    def get(self, request):
+        # Find the default mood
+        default_mood = next(
+            (mood['value'] for mood in MOOD_OPTIONS if mood.get('is_default')),
+            'neutral'  # Fallback default
+        )
+        
+        return Response({
+            'moods': MOOD_OPTIONS,
+            'default': default_mood
+        }, status=status.HTTP_200_OK)
+
+
+class SetMoodView(APIView):
+    """
+    API endpoint to set/update the patient's current mood.
+    POST /patients/set-mood/
+    
+    Request Body:
+        - mood: The mood label selected by the patient (e.g., 'Neutral', 'Sad', 'Happy', 'Anxious')
+    
+    Updates the patient's profile_data with:
+        - mood.current_mood: The selected mood value
+        - mood.last_updated: Timestamp of when the mood was set
+    """
+    permission_classes = [IsAuthenticated, IsPatientUser]
+
+    def post(self, request):
+        # Get mood from request body
+        mood_label = request.data.get('mood')
+        
+        if not mood_label:
+            return Response(
+                {'error': 'Mood is required in request body.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate mood against available options (check by label)
+        valid_mood = next(
+            (mood for mood in MOOD_OPTIONS if mood['label'].lower() == mood_label.lower()),
+            None
+        )
+        
+        if not valid_mood:
+            valid_labels = [mood['label'] for mood in MOOD_OPTIONS]
+            return Response(
+                {'error': f'Invalid mood. Valid options are: {valid_labels}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the patient profile
+        try:
+            patient_profile = request.user.patient_profile
+        except PatientProfile.DoesNotExist:
+            return Response(
+                {'error': 'Patient profile not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Update profile_data with mood information
+        current_time = timezone.now().isoformat()
+        
+        # Ensure profile_data is a dict
+        if not isinstance(patient_profile.profile_data, dict):
+            patient_profile.profile_data = {}
+        
+        # Add/update mood dict in profile_data
+        patient_profile.profile_data['mood'] = {
+            'current_mood': valid_mood['value'],
+            'mood_label': valid_mood['label'],
+            'last_updated': current_time
+        }
+        
+        patient_profile.save()
+        
+        return Response({
+            'message': 'Mood updated successfully.',
+            'mood': patient_profile.profile_data['mood']
+        }, status=status.HTTP_200_OK)
+
 
 class PatientLandingPageView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsPatientUser]
