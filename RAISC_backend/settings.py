@@ -6,13 +6,13 @@ import dj_database_url
 
 load_dotenv()
 
-DATABASES = {
-    'default': dj_database_url.parse(
-        os.getenv("DATABASE_URL"),
-        conn_max_age=0,                     # important with transaction pooling
-        ssl_require= False
-    )
-}
+# DATABASES = {
+#     'default': dj_database_url.parse(
+#         os.getenv("DATABASE_URL"),
+#         conn_max_age=0,                     # important with transaction pooling
+#         ssl_require= False
+#     )
+# }
 
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     'doctors',
     'chat',
     'organization',
+    'notifications',
+    
 ]
 
 MIDDLEWARE = [
@@ -178,3 +180,5 @@ LOGGING = {
         },
     },
 }
+NOTIFICATION_AUTO_DELETE_ENABLED = True   # Set to False to keep notifications forever
+NOTIFICATION_AUTO_DELETE_DAYS = 30        # Delete notifications after this many days

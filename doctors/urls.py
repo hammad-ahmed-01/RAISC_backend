@@ -22,6 +22,11 @@ from .views import (
     ChatbotProfileListView,
     ImportantMessagesView,
     CreateDoctorSessionView,
+    PatientRescheduleRequestListView,
+    PatientRescheduleRequestDetailView,
+    DoctorPendingRescheduleRequestsView,
+    DoctorRespondToRescheduleView,
+    PatientCancelRescheduleRequestView,
 )
 
 urlpatterns = [
@@ -66,4 +71,9 @@ urlpatterns = [
     # NEW integration points used by your Next.js app:
     path("psychologist/current/", CurrentPsychologistView.as_view(), name="psychologist-current"),
     path("latest-session/", LatestSessionView.as_view(), name="latest-session"),
+    path('reschedule-requests/', PatientRescheduleRequestListView.as_view(), name='reschedule-request-list'),
+    path('reschedule-requests/pending/', DoctorPendingRescheduleRequestsView.as_view(), name='reschedule-request-pending'),
+    path('reschedule-requests/<int:pk>/', PatientRescheduleRequestDetailView.as_view(), name='reschedule-request-detail'),
+    path('reschedule-requests/<int:pk>/respond/', DoctorRespondToRescheduleView.as_view(), name='reschedule-request-respond'),
+    path('reschedule-requests/<int:pk>/cancel/', PatientCancelRescheduleRequestView.as_view(), name='reschedule-request-cancel'),
 ]

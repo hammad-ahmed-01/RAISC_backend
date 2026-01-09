@@ -18,3 +18,4 @@ class DoctorRatingAdmin(admin.ModelAdmin):
     list_display = ('id', 'doctor', 'patient', 'stars', 'created_at')
     list_filter = ('stars',)
     search_fields = ('doctor__user__username', 'patient__username')
+    

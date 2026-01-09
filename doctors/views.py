@@ -573,3 +573,218 @@ class PreviousSessionView(APIView):
 
         prev_session = sessions[sessions.count() - 2]
         return Response(LatestSessionSerializer(prev_session).data)
+
+from .models import RescheduleRequest
+from .serializers import (
+    RescheduleRequestSerializer,
+    RescheduleRequestCreateSerializer,
+    RescheduleRequestResponseSerializer,
+)
+
+
+# -------------------------
+# Reschedule Request Views
+# -------------------------
+
+class PatientRescheduleRequestListView(generics.ListCreateAPIView):
+    """
+    GET: List patient's reschedule requests
+    POST: Create a new reschedule request
+    
+    URL: /api/doctors/reschedule-requests/
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return RescheduleRequestCreateSerializer
+        return RescheduleRequestSerializer
+    
+    def get_queryset(self):
+        """Return reschedule requests for sessions where user is the patient."""
+        user = self.request.user
+        
+        # Patients see requests they made
+        if getattr(user, 'user_type', '') == 'patient':
+            return RescheduleRequest.objects.filter(
+                requested_by=user
+            ).select_related('calendar_session', 'calendar_session__doctor')
+        
+        # Doctors see requests for their sessions
+        return RescheduleRequest.objects.filter(
+            calendar_session__doctor=user
+        ).select_related('calendar_session', 'requested_by')
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class PatientRescheduleRequestDetailView(generics.RetrieveDestroyAPIView):
+    """
+    GET: Get reschedule request details
+    DELETE: Cancel a pending reschedule request (patient only)
+    
+    URL: /api/doctors/reschedule-requests/<id>/
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = RescheduleRequestSerializer
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Patients can only see/cancel their own requests
+        if getattr(user, 'user_type', '') == 'patient':
+            return RescheduleRequest.objects.filter(requested_by=user)
+        
+        # Doctors can see requests for their sessions
+        return RescheduleRequest.objects.filter(calendar_session__doctor=user)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Cancel a pending reschedule request."""
+        instance = self.get_object()
+        
+        # Only the requester can cancel
+        if instance.requested_by != request.user:
+            return Response(
+                {'error': 'You can only cancel your own requests.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Can only cancel pending requests
+        if instance.status != 'pending':
+            return Response(
+                {'error': f'Cannot cancel request with status: {instance.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            instance.cancel()
+            return Response(
+                {'message': 'Reschedule request cancelled.'},
+                status=status.HTTP_200_OK
+            )
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class DoctorPendingRescheduleRequestsView(generics.ListAPIView):
+    """
+    GET: List all pending reschedule requests for a doctor's sessions
+    
+    URL: /api/doctors/reschedule-requests/pending/
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = RescheduleRequestSerializer
+    
+    def get_queryset(self):
+        return RescheduleRequest.get_pending_for_doctor(self.request.user)
+
+
+class DoctorRespondToRescheduleView(APIView):
+    """
+    POST: Approve or reject a reschedule request
+    
+    URL: /api/doctors/reschedule-requests/<id>/respond/
+    
+    Body:
+    {
+        "action": "approve" | "reject",
+        "response_note": "Optional note"
+    }
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, pk):
+        # Get the reschedule request
+        try:
+            reschedule_request = RescheduleRequest.objects.select_related(
+                'calendar_session'
+            ).get(pk=pk)
+        except RescheduleRequest.DoesNotExist:
+            return Response(
+                {'error': 'Reschedule request not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verify the doctor owns this session
+        if reschedule_request.calendar_session.doctor != request.user:
+            return Response(
+                {'error': 'You can only respond to requests for your own sessions.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Validate the response
+        serializer = RescheduleRequestResponseSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        action = serializer.validated_data['action']
+        response_note = serializer.validated_data.get('response_note', '')
+        
+        try:
+            if action == 'approve':
+                reschedule_request.approve(response_note=response_note)
+                message = 'Reschedule request approved. Session has been updated.'
+            else:
+                reschedule_request.reject(response_note=response_note)
+                message = 'Reschedule request rejected.'
+            
+            # Return updated request
+            result_serializer = RescheduleRequestSerializer(reschedule_request)
+            return Response({
+                'message': message,
+                'reschedule_request': result_serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class PatientCancelRescheduleRequestView(APIView):
+    """
+    POST: Cancel a pending reschedule request
+    
+    URL: /api/doctors/reschedule-requests/<id>/cancel/
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, pk):
+        try:
+            reschedule_request = RescheduleRequest.objects.get(pk=pk)
+        except RescheduleRequest.DoesNotExist:
+            return Response(
+                {'error': 'Reschedule request not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Only the requester can cancel
+        if reschedule_request.requested_by != request.user:
+            return Response(
+                {'error': 'You can only cancel your own requests.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            reschedule_request.cancel()
+            return Response(
+                {'message': 'Reschedule request cancelled.'},
+                status=status.HTTP_200_OK
+            )
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
