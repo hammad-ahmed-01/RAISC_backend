@@ -7,5 +7,6 @@ urlpatterns = [
     path('view_doctors/', views.OrganizationViewDoctors.as_view()),
     path('no_of_doctors/', views.OrganizationNoOfDoctors.as_view()),
     path('view_doctor_calendar/', views.OrganizationDoctorViewCalendar.as_view()),
-    path('register_doctor/', views.OrganizationRegisterDoctor.as_view())
+    path('register_doctor/', views.OrganizationRegisterDoctor.as_view()),
+    path('profile/', views.OrganizationProfile.as_view()),
 ]

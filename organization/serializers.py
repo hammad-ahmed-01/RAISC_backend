@@ -4,6 +4,7 @@ from users.models import Calendar
 from .models import Organization
 from doctors.models import Doctor
 from patients.models import PatientProfile
+from doctors.serializers import DoctorProfileSerializer
 
 class OrganizationViewDoctorsSerializer(serializers.Serializer):
     id=serializers.IntegerField()
@@ -32,4 +33,18 @@ class OrganizationViewDoctorCalendarSerializer(serializers.ModelSerializer):
     class Meta:
         model=Calendar
         fields=['id', 'title','date','details', 'description', 'doctor_summary', 'patient_update', 'doctor_id', 'patient_id']
+
+
+class OrganizationProfileSerializer(serializers.ModelSerializer):
+    """Serializer for organization profile with associated doctors"""
+    doctors = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Organization
+        fields = ['id', 'name', 'location', 'details', 'user_id', 'doctors']
+    
+    def get_doctors(self, organization):
+        """Get all doctors associated with this organization"""
+        doctors = Doctor.objects.filter(organization_id=organization.id)
+        return DoctorProfileSerializer(doctors, many=True).data
     

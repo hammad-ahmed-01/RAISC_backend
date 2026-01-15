@@ -13,6 +13,7 @@ from .serializers import (
     OrganizationViewDoctorsSerializer,
     OrganizationNoOfDoctorsSerielizer,
     OrganizationViewDoctorCalendarSerializer,
+    OrganizationProfileSerializer,
 )
 from rest_framework import permissions
 from users.permissions import IsOrganizationUser
@@ -138,3 +139,28 @@ class OrganizationRegisterDoctor(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(status=status.HTTP_201_CREATED)
+
+
+class OrganizationProfile(APIView):
+    """
+    API view to get organization details along with associated doctors.
+    Returns the organization profile and a list of all doctors employed by the organization.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsOrganizationUser]
+
+    def get(self, request):
+        user = request.user
+        try:
+            organization = Organization.objects.get(user_id=user.id)
+            serializer = OrganizationProfileSerializer(organization)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Organization.DoesNotExist:
+            # Auto-create organization if it doesn't exist
+            organization = Organization.objects.create(
+                user_id=user.id,
+                name=user.username or "Organization",
+                location="",
+                details={},
+            )
+            serializer = OrganizationProfileSerializer(organization)
+            return Response(serializer.data, status=status.HTTP_200_OK)
