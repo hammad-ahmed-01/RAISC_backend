@@ -1,7 +1,4 @@
 from urllib import request
-from django.shortcuts import render
-
-# Create your views here.
 from django.shortcuts import render, get_object_or_404
 from rest_framework.views import APIView
 from .models import Organization
@@ -22,7 +19,6 @@ from users.views import UserRegistrationView
 from rest_framework.authtoken.models import Token
 
 
-# Create your views here.
 class OrganizationList(APIView):
     def get(self, request):
         organization_list = Organization.objects.all()
@@ -42,7 +38,6 @@ class OrganizationDetails(APIView):
 
     def get(self, request):
         user = request.user
-        #   Automatically create organization if missing
         organization, created = Organization.objects.get_or_create(
             user_id=user.id,
             defaults={
@@ -56,7 +51,6 @@ class OrganizationDetails(APIView):
 
     def put(self, request):
         user = request.user
-        #   Automatically create if missing
         organization, created = Organization.objects.get_or_create(
             user_id=user.id,
             defaults={
@@ -69,7 +63,7 @@ class OrganizationDetails(APIView):
             organization, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()  #   Persist changes
+        serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request):
@@ -130,6 +124,7 @@ class OrganizationRegisterDoctor(APIView):
         if errors:
             return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        # CRITICAL FIX: Set organization_id to the organization's user_id
         org_id = request.data.get("doctor_profile", {}).get("organization")
         if org_id is None or org_id != request.user.id:
             modified_data.setdefault("doctor_profile", {})
@@ -137,30 +132,60 @@ class OrganizationRegisterDoctor(APIView):
 
         serializer = SimpleUserRegistrationSerializer(data=modified_data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(status=status.HTTP_201_CREATED)
-
+        
+        # Save the user first
+        new_user = serializer.save()
+        
+        # CRITICAL FIX: Ensure the Doctor model has organization_id set
+        try:
+            doctor_profile = Doctor.objects.get(user=new_user)
+            # Force set organization_id to current organization's user_id
+            doctor_profile.organization_id = request.user.id
+            doctor_profile.save(update_fields=['organization_id'])
+            print(f"✓ Set organization_id={request.user.id} for doctor {doctor_profile.id}")
+        except Doctor.DoesNotExist:
+            print(f"⚠ Warning: Doctor profile not found for user {new_user.id}")
+        
+        return Response(
+            {
+                "message": "Doctor registered successfully",
+                "user_id": new_user.id,
+                "organization_id": request.user.id
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 class OrganizationProfile(APIView):
     """
-    API view to get organization details along with associated doctors.
+    Public API view to get organization details along with associated doctors.
     Returns the organization profile and a list of all doctors employed by the organization.
+    No authentication required - public access.
     """
-    permission_classes = [permissions.IsAuthenticated, IsOrganizationUser]
+    # CHANGED: Removed permission_classes to make it public
+    permission_classes = []  # Public access
 
     def get(self, request):
-        user = request.user
+        # Get organization_id from query params
+        org_id = request.query_params.get('organization_id')
+        
+        if not org_id:
+            return Response(
+                {"error": "organization_id parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
-            organization = Organization.objects.get(user_id=user.id)
+            # Fetch by organization user_id
+            organization = Organization.objects.get(user_id=org_id)
             serializer = OrganizationProfileSerializer(organization)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Organization.DoesNotExist:
-            # Auto-create organization if it doesn't exist
-            organization = Organization.objects.create(
-                user_id=user.id,
-                name=user.username or "Organization",
-                location="",
-                details={},
+            return Response(
+                {"error": "Organization not found"},
+                status=status.HTTP_404_NOT_FOUND
             )
-            serializer = OrganizationProfileSerializer(organization)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ValueError:
+            return Response(
+                {"error": "Invalid organization_id format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )

@@ -236,22 +236,35 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
 
 # keep single definition for this serializer
 class DoctorProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for doctor profile with organization information
+    """
     user = serializers.SerializerMethodField()
-
+    
     class Meta:
         model = Doctor
-        fields = ["id", "user", "professional_information", "chatgroup_nickname", "rates"]
+        fields = [
+            'id',
+            'user',
+            'user_id',  # IMPORTANT: Include user_id
+            'organization_id',  # IMPORTANT: Include organization_id
+            'professional_information',
+            'chatgroup_nickname',
+            'rates',
+        ]
         extra_kwargs = {"professional_information": {"required": False}}
-
+    
     def get_user(self, obj):
-        u = obj.user
-        return {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "user_type": getattr(u, "user_type", ""),
-        }
-
+        """Get basic user information"""
+        if obj.user:
+            return {
+                'id': obj.user.id,
+                'username': obj.user.username,
+                'email': obj.user.email,
+                'user_type': obj.user.user_type,
+            }
+        return None
+    
     def update(self, instance, validated_data):
         prof = validated_data.pop("professional_information", None)
         if prof is not None:
@@ -259,6 +272,88 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             instance.professional_information = merged
         return super().update(instance, validated_data)
 
+
+# NEW: Comprehensive doctor list serializer for /list endpoint
+class DoctorListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing doctors - includes all necessary fields
+    Flattens professional_information for easier frontend consumption
+    """
+    username = serializers.CharField(source='user.username', read_only=True)
+    name = serializers.SerializerMethodField()
+    profile_image = serializers.SerializerMethodField()
+    specialization = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    experience = serializers.SerializerMethodField()
+    rating = serializers.SerializerMethodField()
+    expertise = serializers.SerializerMethodField()
+    education = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Doctor
+        fields = [
+            'id',
+            'user_id',
+            'username',
+            'organization_id',  # CRITICAL: This must be included
+            'name',
+            'profile_image',
+            'specialization',
+            'location',
+            'experience',
+            'rating',
+            'expertise',
+            'education',
+            'description',
+            'rates',
+        ]
+    
+    def get_name(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('display_name') or (obj.user.username if obj.user else 'Doctor')
+    
+    def get_profile_image(self, obj):
+        pi = obj.professional_information or {}
+        return (
+            pi.get('profile_image') or 
+            pi.get('profile_image_url') or 
+            pi.get('avatar_url') or 
+            '/doctor.jpg'
+        )
+    
+    def get_specialization(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('specialization', '')
+    
+    def get_location(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('location', '')
+    
+    def get_experience(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('experience', '')
+    
+    def get_rating(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('rating', 0)
+    
+    def get_expertise(self, obj):
+        pi = obj.professional_information or {}
+        expertise = pi.get('expertise', [])
+        if isinstance(expertise, list):
+            return expertise
+        elif isinstance(expertise, str):
+            return [e.strip() for e in expertise.split(',') if e.strip()]
+        return []
+    
+    def get_education(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('education', '')
+    
+    def get_description(self, obj):
+        pi = obj.professional_information or {}
+        return pi.get('description', '')
 
 # ----------------------
 # Rating serializer

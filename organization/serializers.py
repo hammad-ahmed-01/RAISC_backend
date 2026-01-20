@@ -1,3 +1,5 @@
+# organization/serializers.py (Updated OrganizationProfileSerializer)
+
 from rest_framework import serializers
 
 from users.models import Calendar
@@ -17,7 +19,7 @@ class OrganizationViewDoctorsSerializer(serializers.Serializer):
         patient_count=PatientProfile.objects.filter(associated_psychologist_id=doctor.user_id).count()
         return patient_count
     
-        
+    
 class OrganizationNoOfDoctorsSerielizer(serializers.ModelSerializer):
     no_of_doctors=serializers.SerializerMethodField(method_name='get_doctor_count')
     def get_doctor_count(self, organization: Organization ):
@@ -45,6 +47,6 @@ class OrganizationProfileSerializer(serializers.ModelSerializer):
     
     def get_doctors(self, organization):
         """Get all doctors associated with this organization"""
-        doctors = Doctor.objects.filter(organization_id=organization.id)
+        # FIXED: Filter by organization.user_id (User ID) instead of organization.id
+        doctors = Doctor.objects.filter(organization_id=organization.user_id)
         return DoctorProfileSerializer(doctors, many=True).data
-    

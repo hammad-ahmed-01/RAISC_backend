@@ -22,7 +22,8 @@ from .serializers import (
     DoctorViewPatientSerializer,
     ChatbotProfileSerializer,
     DoctorRatingSerializer,
-    LatestSessionSerializer,  # NEW
+    LatestSessionSerializer,  
+    DoctorListSerializer
 )
 
 
@@ -99,13 +100,13 @@ class CreateDoctorSessionView(APIView):
 class ListDoctorsView(generics.ListAPIView):
     """
     GET /users/doctor/list/   (Token required)
-    - Returns plain list (no pagination wrapper)
-    - Matches Next.js route normalization
+    - Returns plain list (no pagination wrapper) with organization_id
+    - Uses DoctorListSerializer for flattened professional_information
     """
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
     queryset = Doctor.objects.select_related("user").order_by("user__username")
-    serializer_class = DoctorProfileSerializer
+    serializer_class = DoctorListSerializer  
     pagination_class = None
 
 
