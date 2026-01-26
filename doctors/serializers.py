@@ -9,29 +9,13 @@ from .models import RescheduleRequest
 # Doctor list / profile shapes
 # ----------------------------
 
-class DoctorProfileSerializer(serializers.ModelSerializer):
-    user = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Doctor
-        fields = ["id", "user", "professional_information", "chatgroup_nickname", "rates"]
-
-    def get_user(self, obj):
-        u = obj.user
-        return {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "user_type": getattr(u, "user_type", ""),
-        }
-
-
 class DoctorLimitedSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
+    profile_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Doctor
-        fields = ["id", "user"]
+        fields = ["id", "user", "profile_image"]
 
     def get_user(self, obj):
         u = obj.user
@@ -236,26 +220,26 @@ class ChatbotProfileSerializer(serializers.ModelSerializer):
 
 # keep single definition for this serializer
 class DoctorProfileSerializer(serializers.ModelSerializer):
-    """
-    Serializer for doctor profile with organization information
-    """
     user = serializers.SerializerMethodField()
-    
+    organization_name = serializers.SerializerMethodField()
+    organization_id = serializers.SerializerMethodField()
+    patients_assigned = serializers.SerializerMethodField()
+
     class Meta:
         model = Doctor
         fields = [
             'id',
             'user',
-            'user_id',  # IMPORTANT: Include user_id
-            'organization_id',  # IMPORTANT: Include organization_id
             'professional_information',
             'chatgroup_nickname',
             'rates',
+            'organization_id',
+            'organization_name',
+            'patients_assigned',
         ]
         extra_kwargs = {"professional_information": {"required": False}}
-    
+
     def get_user(self, obj):
-        """Get basic user information"""
         if obj.user:
             return {
                 'id': obj.user.id,
@@ -264,15 +248,31 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
                 'user_type': obj.user.user_type,
             }
         return None
-    
-    def update(self, instance, validated_data):
-        prof = validated_data.pop("professional_information", None)
-        if prof is not None:
-            merged = {**(instance.professional_information or {}), **prof}
-            instance.professional_information = merged
-        return super().update(instance, validated_data)
 
+    def get_organization_id(self, obj):
+        """Return organization user ID"""
+        if obj.organization:
+            return obj.organization.id
+        return None
 
+    def get_organization_name(self, obj):
+        """Return nice organization name"""
+        if obj.organization:
+            try:
+                from organizations.models import Organization
+                org_profile = Organization.objects.get(user=obj.organization)
+                return org_profile.name
+            except Exception:
+                # Fallback to username if Organization model not found
+                return obj.organization.username
+        return None
+
+    def get_patients_assigned(self, obj):
+        """Count assigned patients"""
+        return PatientProfile.objects.filter(
+            associated_psychologist=obj.user
+        ).count()
+        
 # NEW: Comprehensive doctor list serializer for /list endpoint
 class DoctorListSerializer(serializers.ModelSerializer):
     """

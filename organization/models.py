@@ -9,3 +9,4 @@ class Organization(models.Model):
     location=models.CharField(max_length=255)
     details=models.JSONField(null=True)
     user=models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organization_profile")
+    logo = models.ImageField(upload_to='organization_logos/', blank=True, null=True)

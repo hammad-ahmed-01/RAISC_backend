@@ -17,20 +17,23 @@ class OrganizationSerializer(serializers.ModelSerializer):
         fields=['id','name','location','details','user_id']
 
 class OrganizationProfileSerializer(serializers.ModelSerializer):
+    logo = serializers.ImageField(required=False, allow_null=True)
     class Meta:
         model = Organization
-        fields = ["name", "location", "details"]
+        fields = ["name", "location", "details", "logo"]
         
 class PatientProfileSerializer(serializers.ModelSerializer):
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     class Meta:
         model = PatientProfile
-        fields = ["level", "associated_psychologist", "profile_data"]
+        fields = ["level", "associated_psychologist", "profile_data", "profile_image"]
 
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
+    profile_image = serializers.ImageField(required=False, allow_null=True)
     class Meta:
         model = Doctor
-        fields = ["professional_information", "chatgroup_nickname", "rates"]
+        fields = ["professional_information", "chatgroup_nickname", "rates", "profile_image"]
 
 
 # -----------------------------------------------

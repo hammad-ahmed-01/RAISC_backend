@@ -59,11 +59,19 @@ class OrganizationDetails(APIView):
                 "details": {},
             },
         )
-        serializer = OrganizationSerializer(
-            organization, data=request.data, partial=True
+        data = request.data.copy()
+        files = request.FILES
+
+        # Handle logo image upload
+        if "logo" in files:
+            organization.logo = files["logo"]
+
+        serializer = OrganizationProfileSerializer(
+            organization, data=data, partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        organization.save(update_fields=["logo"])
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request):

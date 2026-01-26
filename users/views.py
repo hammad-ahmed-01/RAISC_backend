@@ -2,6 +2,8 @@
 from decimal import Decimal, InvalidOperation
 from datetime import date
 import logging
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from django.contrib.auth import get_user_model, authenticate
 from django.db import transaction
@@ -91,12 +93,65 @@ class LoginView(views.APIView):
 # User detail (self)
 # ---------------------------
 
-class UserDetailView(generics.RetrieveUpdateAPIView):
-    serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+class UserDetailView(APIView):
+    """
+    GET /users/user/
+    Returns complete user profile with nested doctor/patient/organization data
+    """
+    permission_classes = [IsAuthenticated]
 
-    def get_object(self):
-        return self.request.user
+    def get(self, request):
+        user = request.user
+        
+        # Base user data
+        data = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'user_type': getattr(user, 'user_type', ''),
+            'date_joined': user.date_joined,
+            'last_login': user.last_login,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+        }
+
+        # Add type-specific profile
+        if data['user_type'] == 'doctor':
+            try:
+                from doctors.models import Doctor
+                from doctors.serializers import DoctorProfileSerializer
+                doctor = Doctor.objects.select_related('user', 'organization').get(user=user)
+                data['doctor_profile'] = DoctorProfileSerializer(doctor).data
+            except Doctor.DoesNotExist:
+                data['doctor_profile'] = None
+
+        elif data['user_type'] == 'patient':
+            try:
+                from patients.models import PatientProfile
+                pp = PatientProfile.objects.select_related('user', 'associated_psychologist').get(user=user)
+                data['patient_profile'] = {
+                    'id': pp.id,
+                    'level': pp.level,
+                    'profile_data': pp.profile_data,
+                    'associated_psychologist_id': pp.associated_psychologist.id if pp.associated_psychologist else None,
+                }
+            except PatientProfile.DoesNotExist:
+                data['patient_profile'] = None
+
+        elif data['user_type'] == 'organization':
+            try:
+                from organizations.models import Organization
+                org = Organization.objects.get(user=user)
+                data['organization_profile'] = {
+                    'id': org.id,
+                    'name': org.name,
+                    'location': getattr(org, 'location', ''),
+                    'details': getattr(org, 'details', {}),
+                }
+            except Exception:
+                data['organization_profile'] = None
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 # ---------------------------
@@ -194,7 +249,10 @@ class MeProfileUpdateView(views.APIView):
 
     def patch(self, request):
         user = request.user
-        data = dict(request.data or {})
+        data = request.data.copy()
+
+        # Handle file uploads
+        files = request.FILES
 
         if "email" in data:
             email = (data.get("email") or "").strip().lower()
@@ -224,6 +282,10 @@ class MeProfileUpdateView(views.APIView):
                     prof[k] = v
             doc.professional_information = prof
 
+            # Handle profile image upload
+            if "profile_image" in files:
+                doc.profile_image = files["profile_image"]
+
             if "rates" in data:
                 raw = str(data.get("rates", "")).strip()
                 try:
@@ -232,7 +294,7 @@ class MeProfileUpdateView(views.APIView):
                 except (InvalidOperation, TypeError, ValueError):
                     return Response({"error": "Invalid rates value."}, status=status.HTTP_400_BAD_REQUEST)
 
-            doc.save(update_fields=["professional_information", "rates"])
+            doc.save(update_fields=["professional_information", "rates", "profile_image"])
             return Response(self._flatten_doctor(user, doc), status=200)
 
         elif role == "patient":
@@ -242,7 +304,12 @@ class MeProfileUpdateView(views.APIView):
                 if k in self.PATIENT_KEYS:
                     pd[k] = v
             profile.profile_data = pd
-            profile.save(update_fields=["profile_data"])
+
+            # Handle profile image upload
+            if "profile_image" in files:
+                profile.profile_image = files["profile_image"]
+
+            profile.save(update_fields=["profile_data", "profile_image"])
             return Response(self._flatten_patient(user, profile), status=200)
 
         return Response({"username": user.username, "email": user.email}, status=200)

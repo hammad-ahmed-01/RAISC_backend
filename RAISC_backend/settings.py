@@ -141,8 +141,11 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-# Static files settings
+
+# Static and media files settings
 STATIC_URL = '/static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Custom user model
 AUTH_USER_MODEL = 'users.User'

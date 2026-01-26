@@ -11,6 +11,7 @@ class Doctor(models.Model):
     professional_information = models.JSONField(default=dict)  # stores rating average too
     chatgroup_nickname = models.CharField(max_length=255, blank=True, null=True)
     rates = models.DecimalField(max_digits=7, decimal_places=2, blank=True, null=True)
+    profile_image = models.ImageField(upload_to='doctor_profiles/', blank=True, null=True)
 
     def __str__(self):
         return self.user.username

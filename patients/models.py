@@ -17,6 +17,7 @@ class PatientProfile(models.Model):
         limit_choices_to={'user_type': 'doctor'}
     )
     profile_data = models.JSONField(default=dict)
+    profile_image = models.ImageField(upload_to='patient_profiles/', blank=True, null=True)
 
     def __str__(self):
         return self.user.username

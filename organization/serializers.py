@@ -40,13 +40,18 @@ class OrganizationViewDoctorCalendarSerializer(serializers.ModelSerializer):
 class OrganizationProfileSerializer(serializers.ModelSerializer):
     """Serializer for organization profile with associated doctors"""
     doctors = serializers.SerializerMethodField()
-    
+    logo = serializers.SerializerMethodField()  # ← Use method to return full URL
+
     class Meta:
         model = Organization
-        fields = ['id', 'name', 'location', 'details', 'user_id', 'doctors']
-    
+        fields = ['id', 'name', 'location', 'details', 'user_id', 'doctors', 'logo']
+
+    def get_logo(self, organization):
+        if organization.logo:
+            # Returns full absolute URL: http(s)://yourdomain.com/media/...
+            return organization.logo.url
+        return None
+
     def get_doctors(self, organization):
-        """Get all doctors associated with this organization"""
-        # FIXED: Filter by organization.user_id (User ID) instead of organization.id
         doctors = Doctor.objects.filter(organization_id=organization.user_id)
         return DoctorProfileSerializer(doctors, many=True).data
