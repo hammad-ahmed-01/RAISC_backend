@@ -23,7 +23,9 @@ from django.conf import settings
 
 from .models import Notification
 
+import logging
 
+logger = logging.getLogger(__name__)
 # -------------------------
 # Reschedule Request Signals
 # -------------------------
@@ -64,6 +66,7 @@ def notify_on_reschedule_request(sender, instance, created, **kwargs):
             proposed_datetime += f" at {instance.proposed_time.strftime('%I:%M %p').lstrip('0')}"
     
     if created:
+        send_reschedule_whatsapp(instance)
         # New reschedule request - notify doctor
         Notification.create_notification(
             recipient=doctor,
@@ -264,3 +267,176 @@ def _get_display_name(user):
     
     # Fallback to username
     return user.username
+
+
+def send_reschedule_whatsapp(reschedule_request):
+    """
+    Send WhatsApp notification to doctor when a reschedule request is created.
+    
+    Args:
+        reschedule_request: RescheduleRequest model instance
+    """
+    try:
+        from .whatsapp_service import notify_doctor_reschedule, is_whatsapp_enabled
+        
+        if not is_whatsapp_enabled():
+            logger.info("WhatsApp is disabled, skipping notification")
+            return
+        
+        # Get the calendar session
+        session = reschedule_request.calendar_session
+        if not session:
+            logger.warning("No calendar session found for reschedule request")
+            return
+        
+        # Get doctor user
+        doctor_user = session.doctor
+        if not doctor_user:
+            logger.warning("No doctor found for session")
+            return
+        
+        # Get patient name
+        patient_user = session.patient
+        patient_name = "Patient"
+        if patient_user:
+            # Try to get display name from profile
+            if hasattr(patient_user, 'patient_profile'):
+                profile = patient_user.patient_profile
+                if hasattr(profile, 'profile_data') and profile.profile_data:
+                    patient_name = profile.profile_data.get('display_name', '')
+            
+            # Fallback to username or full name
+            if not patient_name:
+                patient_name = patient_user.get_full_name() or patient_user.username
+        
+        # Format dates
+        current_date = "Not specified"
+        if session.date:
+            current_date = session.date.strftime("%B %d, %Y")
+        
+        proposed_date = "Not specified"
+        if reschedule_request.proposed_date:
+            proposed_date = reschedule_request.proposed_date.strftime("%B %d, %Y")
+        
+        proposed_time = "Not specified"
+        if reschedule_request.proposed_time:
+            # Handle datetime.time objects
+            from datetime import time as dt_time
+            if isinstance(reschedule_request.proposed_time, dt_time):
+                hour = reschedule_request.proposed_time.hour
+                minute = reschedule_request.proposed_time.minute
+                period = "AM" if hour < 12 else "PM"
+                if hour == 0:
+                    hour = 12
+                elif hour > 12:
+                    hour -= 12
+                proposed_time = f"{hour}:{minute:02d} {period}"
+            elif isinstance(reschedule_request.proposed_time, str) and ':' in reschedule_request.proposed_time:
+                # Format time to 12-hour if it's in HH:MM format
+                try:
+                    parts = reschedule_request.proposed_time.split(':')
+                    hour = int(parts[0])
+                    minute = int(parts[1]) if len(parts) > 1 else 0
+                    period = "AM" if hour < 12 else "PM"
+                    if hour == 0:
+                        hour = 12
+                    elif hour > 12:
+                        hour -= 12
+                    proposed_time = f"{hour}:{minute:02d} {period}"
+                except (ValueError, IndexError):
+                    proposed_time = str(reschedule_request.proposed_time)
+            else:
+                proposed_time = str(reschedule_request.proposed_time)
+        
+        # Get session title
+        session_title = session.title or "Therapy Session"
+        
+        # Get reason
+        reason = reschedule_request.reason or ""
+        
+        # Send WhatsApp
+        result = notify_doctor_reschedule(
+            doctor_user=doctor_user,
+            patient_name=patient_name,
+            session_title=session_title,
+            current_date=current_date,
+            proposed_date=proposed_date,
+            proposed_time=proposed_time,
+            reason=reason
+        )
+        
+        if result.get('success'):
+            logger.info(f"WhatsApp sent to doctor {doctor_user.id} for reschedule request {reschedule_request.id}")
+        else:
+            logger.warning(f"WhatsApp failed: {result.get('error')}")
+            
+    except ImportError:
+        logger.warning("WhatsApp service not available")
+    except Exception as e:
+        logger.error(f"Error sending WhatsApp for reschedule: {e}")
+
+
+# =====================================================
+# SIGNAL: RescheduleRequest created
+# =====================================================
+
+# Try to import RescheduleRequest model
+# Adjust the import path based on where your model is located
+# try:
+#     from doctors.models import RescheduleRequest
+#     RESCHEDULE_MODEL_AVAILABLE = True
+# except ImportError:
+#     try:
+#         from notifications.models import RescheduleRequest
+#         RESCHEDULE_MODEL_AVAILABLE = True
+#     except ImportError:
+#         RESCHEDULE_MODEL_AVAILABLE = False
+#         logger.info("RescheduleRequest model not found, signal not registered")
+
+
+# if RESCHEDULE_MODEL_AVAILABLE:
+    
+#     @receiver(post_save, sender=RescheduleRequest)
+#     def on_reschedule_request_created(sender, instance, created, **kwargs):
+#         """
+#         Signal handler: When a RescheduleRequest is created, notify the doctor.
+#         """
+#         if not created:
+#             # Only on creation, not updates
+#             return
+        
+#         if instance.status != 'pending':
+#             # Only for pending requests
+#             return
+        
+#         logger.info(f"RescheduleRequest {instance.id} created, sending notifications...")
+        
+#         # Send WhatsApp to doctor
+#         send_reschedule_whatsapp(instance)
+        
+#         # Also create in-app notification (if Notification model exists)
+#         # try:
+#         #     from .models import Notification
+            
+#         #     session = instance.calendar_session
+#         #     if session and session.doctor:
+#         #         # Get patient name for notification
+#         #         patient_name = "A patient"
+#         #         if session.patient:
+#         #             patient_name = session.patient.get_full_name() or session.patient.username
+                
+#         #         # Create in-app notification
+#         #         Notification.objects.create(
+#         #             user=session.doctor,
+#         #             title="Reschedule Request",
+#         #             message=f"{patient_name} has requested to reschedule their session to {instance.proposed_date}.",
+#         #             notification_type="reschedule_request",
+#         #             related_object_type="reschedule_request",
+#         #             related_object_id=instance.id,
+#         #         )
+#         #         logger.info(f"In-app notification created for doctor {session.doctor.id}")
+                
+#         # except ImportError:
+#         #     logger.info("Notification model not available, skipping in-app notification")
+#         # except Exception as e:
+#         #     logger.error(f"Error creating in-app notification: {e}")
